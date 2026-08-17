@@ -1,6 +1,6 @@
-# Orynth ProductLab
+# Orynth Labs
 
-Orynth ProductLab is the alpha workspace for a focused 4-week technical build around launch intelligence, chain activity, social signals, and product execution workflows.
+Orynth Lab is the alpha workspace for a focused 4-week technical build around launch intelligence, chain activity, social signals, and product execution workflows.
 
 This repo is intentionally scoped for a credible alpha, not the full intelligence network.
 
