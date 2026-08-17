@@ -3,9 +3,14 @@ import { AppShell } from "@/components/layout/app-shell";
 import { LaunchTable } from "@/components/dashboard/launch-table";
 import { MetricGrid } from "@/components/dashboard/metric-grid";
 import { SignalList } from "@/components/dashboard/signal-list";
-import { launches, metricCards, signals } from "@/lib/mock-data";
+import { DataSourceBadge } from "@/components/dashboard/data-source-badge";
+import { getDashboardData } from "@/server/queries/dashboard";
 
-export default function HomePage() {
+export const revalidate = 0;
+
+export default async function HomePage() {
+  const { launches, signals, metrics, usingMockData } = await getDashboardData();
+
   return (
     <AppShell
       title="Overview"
@@ -14,9 +19,12 @@ export default function HomePage() {
       <div className="grid gap-6">
         <section className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
           <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-emerald-400/20 via-white/5 to-sky-400/10 p-8 shadow-2xl shadow-black/15">
-            <p className="text-sm uppercase tracking-[0.35em] text-emerald-200/80">
-              Alpha scope
-            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-sm uppercase tracking-[0.35em] text-emerald-200/80">
+                Alpha scope
+              </p>
+              <DataSourceBadge usingMockData={usingMockData} />
+            </div>
             <h2 className="mt-4 max-w-2xl text-4xl font-semibold tracking-tight">
               A credible four-week build for launch discovery, scoring, and
               server-side execution.
@@ -53,7 +61,7 @@ export default function HomePage() {
           </section>
         </section>
 
-        <MetricGrid cards={metricCards} />
+        <MetricGrid cards={metrics} />
 
         <section className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
           <LaunchTable launches={launches} />

@@ -1,13 +1,16 @@
 import { runtimeEnv } from "@/lib/env";
 
 export async function fetchGitHubRepository(owner: string, repo: string) {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json"
+  };
+
+  if (runtimeEnv.githubToken) {
+    headers.Authorization = `Bearer ${runtimeEnv.githubToken}`;
+  }
+
   const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: runtimeEnv.githubToken
-        ? `Bearer ${runtimeEnv.githubToken}`
-        : undefined
-    }
+    headers
   });
 
   if (!response.ok) {

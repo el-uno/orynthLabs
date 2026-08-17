@@ -1,12 +1,13 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+// `as const` keeps the hrefs as literal types so typedRoutes can validate them.
 const navItems = [
   { href: "/", label: "Overview" },
   { href: "/launches", label: "Launches" },
   { href: "/signals", label: "Signals" },
   { href: "/settings", label: "Settings" }
-];
+] as const;
 
 export function AppShell({
   title,

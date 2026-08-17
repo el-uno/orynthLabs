@@ -1,10 +1,12 @@
-import { Queue, Worker } from "bullmq";
+import { Queue, Worker, type Processor } from "bullmq";
 import { redisConnection } from "./connection";
 
 export const queueName = {
   launchOps: "launch-ops",
   signingOps: "signing-ops"
 } as const;
+
+export type QueueKey = keyof typeof queueName;
 
 export function createLaunchQueue() {
   if (!redisConnection) {
@@ -26,15 +28,15 @@ export function createSigningQueue() {
   });
 }
 
-export function createWorker(
-  queue: keyof typeof queueName,
-  handler: Parameters<typeof Worker>[1]
+export function createWorker<DataType = unknown, ResultType = unknown>(
+  queue: QueueKey,
+  handler: Processor<DataType, ResultType>
 ) {
   if (!redisConnection) {
     return null;
   }
 
-  return new Worker(queueName[queue], handler, {
+  return new Worker<DataType, ResultType>(queueName[queue], handler, {
     connection: redisConnection
   });
 }
