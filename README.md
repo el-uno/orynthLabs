@@ -43,6 +43,15 @@ This repo is intentionally scoped for a credible alpha, not the full intelligenc
 - `POST /api/launch-snapshot` to compose a launch snapshot from partner and GitHub data
 - Explicit signing boundary documentation under `src/server/signing`
 
+## Database And Workers
+
+- Supabase migrations live in `supabase/migrations`
+- `launch_projects` stores launch records and scoring state
+- `signal_events` stores normalized cross-source signals
+- `launch_snapshots` stores API-composed snapshots
+- `jobs` stores queue-visible job state for operational tracing
+- `src/server/workers` holds queue workers for scoring and signing
+
 ## Getting Started
 
 1. Install dependencies

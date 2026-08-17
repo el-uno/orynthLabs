@@ -1,24 +1,21 @@
 import { buildLaunchSnapshot } from "@/server/workflows/launch-workflow";
+import { launchSnapshotInputSchema } from "@/lib/schema";
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as {
-    owner?: string;
-    repo?: string;
-    partnerPath?: string;
-  };
+  const body = launchSnapshotInputSchema.safeParse(await request.json());
 
-  if (!body.owner || !body.repo || !body.partnerPath) {
+  if (!body.success) {
     return Response.json(
-      { ok: false, error: "owner, repo, and partnerPath are required" },
+      { ok: false, error: body.error.flatten() },
       { status: 400 }
     );
   }
 
   try {
     const snapshot = await buildLaunchSnapshot({
-      owner: body.owner,
-      repo: body.repo,
-      partnerPath: body.partnerPath
+      owner: body.data.owner,
+      repo: body.data.repo,
+      partnerPath: body.data.partnerPath
     });
 
     return Response.json({ ok: true, snapshot });
