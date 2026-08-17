@@ -35,6 +35,14 @@ This repo is intentionally scoped for a credible alpha, not the full intelligenc
 - `src/server` - backend-only code for signing, jobs, and integrations
 - `workers` - optional separate worker processes as the build expands
 
+## Current Alpha Slice
+
+- `Overview` dashboard with metrics, launch queue, and signal stream
+- `Launches`, `Signals`, and `Settings` routes
+- Server-side integration adapters for Orynth, GitHub, and Helius
+- `POST /api/launch-snapshot` to compose a launch snapshot from partner and GitHub data
+- Explicit signing boundary documentation under `src/server/signing`
+
 ## Getting Started
 
 1. Install dependencies
