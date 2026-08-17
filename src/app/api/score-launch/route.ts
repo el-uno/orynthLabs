@@ -1,10 +1,19 @@
-import { scoreLaunch } from "@/server/ai/scoring";
-import { findLaunchByRepo, listLaunches, upsertLaunchScore } from "@/server/db/launches";
-import { insertScoredSignals, listSignals } from "@/server/db/signals";
-import { launches as fallbackLaunches, signals as fallbackSignals } from "@/lib/mock-data";
+import { createLaunchQueue } from "@/server/queue";
+import { attachQueueJobId, recordJobQueued } from "@/server/db/jobs";
+import { authorizeApiRequest } from "@/server/auth/bearer";
 import { scoreLaunchInputSchema } from "@/lib/schema";
 
+/**
+ * Enqueues scoring rather than running it inline: an OpenAI call can outlive a
+ * serverless request, and retries belong to the queue. Poll GET /api/jobs/{id}
+ * with the returned jobRecordId for the outcome.
+ */
 export async function POST(request: Request) {
+  const auth = authorizeApiRequest(request);
+  if (!auth.ok) {
+    return Response.json({ ok: false, error: auth.error }, { status: auth.status });
+  }
+
   let json: unknown;
   try {
     json = await request.json();
@@ -13,43 +22,40 @@ export async function POST(request: Request) {
   }
 
   const body = scoreLaunchInputSchema.safeParse(json);
-
   if (!body.success) {
     return Response.json({ ok: false, error: body.error.flatten() }, { status: 400 });
   }
 
+  const queue = createLaunchQueue();
+  if (!queue) {
+    return Response.json(
+      {
+        ok: false,
+        error: "REDIS_URL is not configured; start Redis and run `npm run worker`"
+      },
+      { status: 503 }
+    );
+  }
+
   try {
-    // Score the launch the caller actually named, not just the first record.
-    const launch =
-      (await findLaunchByRepo(body.data.owner, body.data.repo)) ??
-      (await listLaunches(1))?.[0] ??
-      fallbackLaunches[0];
-
-    const storedSignals = await listSignals(25);
-    const signals =
-      storedSignals && storedSignals.length > 0 ? storedSignals : fallbackSignals;
-
-    const result = await scoreLaunch({ launch, signals });
-
-    const persisted = await upsertLaunchScore({
-      name: launch.name,
-      symbol: launch.symbol,
-      status: result.status,
-      score: Math.round(result.score),
-      rationale: result.rationale
+    const jobRecordId = await recordJobQueued({
+      queueName: "launch-ops",
+      jobType: "score-launch",
+      payload: { ...body.data }
     });
 
-    await insertScoredSignals(persisted?.id ?? null, result.signals);
-
-    return Response.json({
-      ok: true,
-      input: body.data,
-      launchId: persisted?.id ?? launch.id,
-      persisted: persisted !== null,
-      result
+    const job = await queue.add("score-launch", {
+      owner: body.data.owner,
+      repo: body.data.repo,
+      partnerPath: body.data.partnerPath,
+      jobRecordId
     });
+
+    await attachQueueJobId(jobRecordId, job.id);
+
+    return Response.json({ ok: true, jobId: job.id, jobRecordId }, { status: 202 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof Error ? error.message : "Failed to enqueue scoring job";
     return Response.json({ ok: false, error: message }, { status: 500 });
   }
 }

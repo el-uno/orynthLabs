@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createSigningQueue } from "@/server/queue";
-import { recordJobQueued } from "@/server/db/jobs";
+import { attachQueueJobId, recordJobQueued } from "@/server/db/jobs";
 import { authorizeSigningRequest } from "@/server/signing/auth";
 import { evaluateSigningPolicy } from "@/server/signing/policy";
 
@@ -65,7 +65,9 @@ export async function POST(request: Request) {
       jobRecordId
     });
 
-    return Response.json({ ok: true, jobId: job.id, jobRecordId });
+    await attachQueueJobId(jobRecordId, job.id);
+
+    return Response.json({ ok: true, jobId: job.id, jobRecordId }, { status: 202 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to enqueue signing job";
     return Response.json({ ok: false, error: message }, { status: 500 });

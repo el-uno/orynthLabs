@@ -7,6 +7,7 @@ import {
   signAsBackendAuthority,
   signAsLauncherPayer
 } from "@/server/signing/signer";
+import { currentAttempt, isFinalAttempt } from "./job-attempts";
 
 export type SigningJobData = {
   serializedTransaction: string;
@@ -22,12 +23,16 @@ export type SigningJobResult = {
 
 export function startSigningWorker() {
   return createWorker<SigningJobData, SigningJobResult>("signingOps", async (job) => {
+    const jobRecordId = job.data.jobRecordId;
+    const attempt = currentAttempt(job);
+
     if (job.name !== "sign-transaction") {
-      return { ok: false, reason: `unsupported job name: ${job.name}` };
+      const reason = `unsupported job name: ${job.name}`;
+      await markJobStatus(jobRecordId, "failed", { error: reason, attempts: attempt });
+      return { ok: false, reason };
     }
 
-    const jobRecordId = job.data.jobRecordId;
-    await markJobStatus(jobRecordId, "running");
+    await markJobStatus(jobRecordId, "running", { attempts: attempt });
 
     try {
       // Re-run the policy here rather than trusting whoever enqueued the job.
@@ -35,7 +40,12 @@ export function startSigningWorker() {
       const policy = evaluateSigningPolicy(job.data.serializedTransaction);
 
       if (!policy.ok) {
-        await markJobStatus(jobRecordId, "failed", policy.reason);
+        // A rejected transaction is not a transient fault. Return instead of
+        // throwing so BullMQ does not retry a decision that cannot change.
+        await markJobStatus(jobRecordId, "failed", {
+          error: policy.reason,
+          attempts: attempt
+        });
         return { ok: false, reason: policy.reason };
       }
 
@@ -59,12 +69,17 @@ export function startSigningWorker() {
         .serialize({ requireAllSignatures: false })
         .toString("base64");
 
-      await markJobStatus(jobRecordId, "succeeded");
+      await markJobStatus(jobRecordId, "succeeded", { attempts: attempt });
 
       return { ok: true, signedTransaction, signedBy };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown signing error";
-      await markJobStatus(jobRecordId, "failed", message);
+
+      await markJobStatus(jobRecordId, isFinalAttempt(job) ? "failed" : "retrying", {
+        error: message,
+        attempts: attempt
+      });
+
       throw error;
     }
   });

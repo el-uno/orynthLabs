@@ -40,10 +40,15 @@ This repo is intentionally scoped for a credible alpha, not the full intelligenc
 - `Overview` dashboard with metrics, launch queue, and signal stream, read from Supabase
 - `Launches`, `Signals`, and `Settings` routes
 - Server-side integration adapters for Orynth, GitHub, and Helius
-- `POST /api/launch-snapshot` composes and persists a snapshot from partner and GitHub data
-- `POST /api/score-launch` scores the named repo and persists the launch and its signals
+- `POST /api/launch-snapshot` queues snapshot composition from partner and GitHub data
+- `POST /api/score-launch` queues scoring for the named repo
+- `GET /api/jobs/{jobRecordId}` polls the outcome of either
 - `POST /api/enqueue-signing` is authenticated and policy-gated (see below)
 - Enforced signing boundary under `src/server/signing`
+
+The three `POST` routes are asynchronous: they validate, enqueue, and return
+`202` with a `jobRecordId`. They need `REDIS_URL` set and `npm run worker`
+running, and return `503` otherwise rather than silently running inline.
 
 Pages fall back to mock data when Supabase is unconfigured, and say so with a
 badge in the UI, so the dashboard stays demoable without credentials.
@@ -63,6 +68,36 @@ Migration `0002` adds a unique index on `launch_projects.symbol` (the upsert
 conflict target) and enables row level security on every table. No RLS policies
 are defined, so only the service role key can reach the data; add explicit
 policies before pointing a browser-side Supabase client at any table.
+Migration `0003` adds attempt tracking and a BullMQ job id to `jobs`, so a
+failed row can be matched to the queue entry an operator needs to retry.
+
+Jobs retry with exponential backoff — three attempts for launch ops, two for
+signing. A job that is about to retry is recorded as `retrying`, not `failed`,
+so the `jobs` table does not show red rows for work that is still in flight.
+
+## API Auth
+
+Every route that costs money or writes data requires a bearer token. Two
+separate secrets, so holding the general token does not grant the ability to
+queue work for the authority keys:
+
+| Secret | Guards |
+| --- | --- |
+| `API_TOKEN` | `/api/score-launch`, `/api/launch-snapshot`, `/api/jobs/{id}` |
+| `SIGNING_API_TOKEN` | `/api/enqueue-signing` |
+
+Both fail closed — an unset secret returns `503` rather than accepting
+anonymous callers. `/api/health` is intentionally open.
+
+## Testing
+
+```bash
+npm test
+```
+
+Covers the signing policy, both auth guards, the deterministic scoring
+fallback, job attempt accounting, and the dashboard's mock-data fallback.
+`npm run verify:signing` runs just the security-critical subset.
 
 ## Signing Safety
 
