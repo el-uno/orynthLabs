@@ -26,13 +26,6 @@ This repo is intentionally scoped for a credible alpha, not the full intelligenc
 - Hosting: Vercel + Railway, Fly, or AWS worker
 - Secrets/signing: KMS or custody signer for production
 
-## Security Boundary
-
-The signing boundary is a hard requirement:
-
-- `poolCreator` private key stays in backend/KMS/custody infrastructure
-- `launcher` signs as payer
-- the frontend never handles the `poolCreator` secret
 
 ## Project Structure
 
