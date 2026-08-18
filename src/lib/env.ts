@@ -16,6 +16,10 @@ type Env = {
   API_TOKEN?: string;
   SIGNING_API_TOKEN?: string;
   SIGNING_ALLOWED_PROGRAM_IDS?: string;
+  SCHEDULER_ENABLED?: string;
+  SCHEDULER_INGEST_CRON?: string;
+  SCHEDULER_SCORE_CRON?: string;
+  SCHEDULER_TIMEZONE?: string;
 };
 
 function env(): Env {
@@ -89,5 +93,21 @@ export const runtimeEnv = {
   },
   get signingAllowedProgramIds() {
     return parseList(env().SIGNING_ALLOWED_PROGRAM_IDS);
+  },
+  /** Master switch. Off by default: a scheduler that starts itself would spend
+   * money on external APIs the first time anyone runs a worker. */
+  get schedulerEnabled() {
+    return env().SCHEDULER_ENABLED === "true";
+  },
+  get schedulerIngestCron() {
+    return env().SCHEDULER_INGEST_CRON ?? "0 */6 * * *";
+  },
+  /** No default. Scoring calls OpenAI per launch, so it stays off until
+   * someone opts in explicitly with a cron expression. */
+  get schedulerScoreCron() {
+    return env().SCHEDULER_SCORE_CRON;
+  },
+  get schedulerTimezone() {
+    return env().SCHEDULER_TIMEZONE ?? "UTC";
   }
 };
