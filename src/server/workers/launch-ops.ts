@@ -1,8 +1,10 @@
 import { createWorker } from "@/server/queue";
 import { scoreLaunch } from "@/server/ai/scoring";
 import { markJobStatus } from "@/server/db/jobs";
-import { findLaunchById, listLaunches, upsertLaunchScore } from "@/server/db/launches";
-import { insertScoredSignals, listSignals } from "@/server/db/signals";
+import { findLaunchById, findLaunchByRepo, listLaunches, upsertLaunchScore } from "@/server/db/launches";
+import { insertObservedSignals, listSignals } from "@/server/db/signals";
+import { insertLaunchSnapshot } from "@/server/db/snapshots";
+import { ingestGitHubActivity } from "@/server/ingestion/run-github";
 import { buildLaunchSnapshot } from "@/server/workflows/launch-workflow";
 import { launches as fallbackLaunches, signals as fallbackSignals } from "@/lib/mock-data";
 import { currentAttempt, isFinalAttempt } from "./job-attempts";
@@ -13,6 +15,7 @@ export type LaunchJobData = {
   owner?: string;
   repo?: string;
   partnerPath?: string;
+  windowDays?: number;
   jobRecordId?: string | null;
 };
 
@@ -22,7 +25,7 @@ export type LaunchJobResult = {
   snapshotId?: string | null;
   score?: number;
   status?: string;
-  persistedSignals?: number;
+  signalsIngested?: number;
   reason?: string;
 };
 
@@ -66,20 +69,44 @@ export function startLaunchOpsWorker() {
           rationale: result.rationale
         });
 
-        const persistedSignals = await insertScoredSignals(
-          persisted?.id ?? null,
-          result.signals
-        );
+        // Scoring output goes to the snapshot that produced it. It is NOT
+        // written into signal_events — that fed scoring its own output and made
+        // the table double on every run. See migration 0005.
+        const snapshotId = await insertLaunchSnapshot({
+          projectId: persisted?.id ?? null,
+          source: `scoring:${launch.symbol}`,
+          payload: { scoring: result },
+          score: result.score,
+          status: result.status
+        });
 
         await markJobStatus(jobRecordId, "succeeded", { attempts: attempt });
 
         return {
           ok: true,
           launchId: persisted?.id ?? launch.id,
+          snapshotId,
           score: result.score,
-          status: result.status,
-          persistedSignals
+          status: result.status
         };
+      }
+
+      if (job.name === "ingest-github") {
+        const { owner, repo, windowDays } = job.data;
+
+        if (!owner || !repo) {
+          const reason = "ingest-github requires owner and repo";
+          await markJobStatus(jobRecordId, "failed", { error: reason, attempts: attempt });
+          return { ok: false, reason };
+        }
+
+        const launch = await findLaunchByRepo(owner, repo);
+        const signals = await ingestGitHubActivity({ owner, repo, windowDays });
+        const count = await insertObservedSignals(launch?.id ?? null, signals);
+
+        await markJobStatus(jobRecordId, "succeeded", { attempts: attempt });
+
+        return { ok: true, launchId: launch?.id, signalsIngested: count };
       }
 
       if (job.name === "build-snapshot") {
@@ -110,8 +137,6 @@ export function startLaunchOpsWorker() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown launch-ops error";
 
-      // Only call it failed when no retry is coming, so the jobs table does not
-      // show a red row for work that is about to succeed on attempt two.
       await markJobStatus(jobRecordId, isFinalAttempt(job) ? "failed" : "retrying", {
         error: message,
         attempts: attempt

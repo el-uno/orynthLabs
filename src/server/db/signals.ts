@@ -1,22 +1,24 @@
-import { z } from "zod";
 import { supabaseAdmin } from "./client";
-import { scoredSignalSchema, severitySchema, signalKindSchema } from "@/lib/schema";
-import type { Signal, SignalKind, SignalSeverity } from "@/lib/types";
+import { severitySchema, signalKindSchema } from "@/lib/schema";
+import type { ObservedSignal, Signal, SignalKind, SignalSeverity } from "@/lib/types";
 
 type SignalRow = {
   id: string;
   project_id: string | null;
   source: string;
+  external_id: string | null;
   kind: string;
   severity: string;
   title: string;
   detail: string;
   value: string | null;
   score_delta: number;
+  observed_at: string | null;
   created_at: string;
 };
 
-type ScoredSignal = z.infer<typeof scoredSignalSchema>;
+const SIGNAL_COLUMNS =
+  "id, project_id, source, external_id, kind, severity, title, detail, value, score_delta, observed_at, created_at";
 
 function toKind(value: string): SignalKind {
   const parsed = signalKindSchema.safeParse(value);
@@ -36,7 +38,8 @@ function toSignal(row: SignalRow): Signal {
     severity: toSeverity(row.severity),
     value: row.value ?? "",
     detail: row.detail,
-    timestamp: row.created_at
+    // Prefer when the event happened upstream over when we stored it.
+    timestamp: row.observed_at ?? row.created_at
   };
 }
 
@@ -47,9 +50,7 @@ export async function listSignals(limit = 25): Promise<Signal[] | null> {
 
   const { data, error } = await supabaseAdmin
     .from("signal_events")
-    .select(
-      "id, project_id, source, kind, severity, title, detail, value, score_delta, created_at"
-    )
+    .select(SIGNAL_COLUMNS)
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -60,9 +61,18 @@ export async function listSignals(limit = 25): Promise<Signal[] | null> {
   return (data as SignalRow[]).map(toSignal);
 }
 
-export async function insertScoredSignals(
+/**
+ * Persists observed signals, keyed on (source, external_id) so re-running
+ * ingestion updates rather than appends.
+ *
+ * This is the only write path into `signal_events`. Scoring output must never
+ * be written here — it is an artifact of a scoring run and belongs on
+ * `launch_snapshots.payload`. Writing it back created a feedback loop where
+ * each run consumed the previous run's output and the table doubled.
+ */
+export async function insertObservedSignals(
   projectId: string | null,
-  signals: ScoredSignal[]
+  signals: ObservedSignal[]
 ): Promise<number> {
   if (!supabaseAdmin || signals.length === 0) {
     return 0;
@@ -71,19 +81,23 @@ export async function insertScoredSignals(
   const rows = signals.map((signal) => ({
     project_id: projectId,
     source: signal.source,
+    external_id: signal.externalId,
     kind: signal.kind,
     severity: signal.severity,
     title: signal.title,
     detail: signal.detail,
-    value: signal.value ?? null,
+    value: signal.value,
     score_delta: signal.scoreDelta,
-    raw: signal
+    observed_at: signal.observedAt,
+    raw: signal.raw ?? {}
   }));
 
-  const { error } = await supabaseAdmin.from("signal_events").insert(rows);
+  const { error } = await supabaseAdmin
+    .from("signal_events")
+    .upsert(rows, { onConflict: "source,external_id" });
 
   if (error) {
-    throw new Error(`Failed to insert signals: ${error.message}`);
+    throw new Error(`Failed to upsert observed signals: ${error.message}`);
   }
 
   return rows.length;

@@ -34,3 +34,24 @@ export type MetricCard = {
   value: string;
   delta: string;
 };
+
+/**
+ * A fact observed in the world, normalized from an external source.
+ *
+ * Distinct from scoring output: scoring output is an artifact of a scoring run
+ * and lives on `launch_snapshots.payload`. Only observed signals are stored in
+ * `signal_events`, so scoring can never consume its own output.
+ */
+export type ObservedSignal = {
+  source: string;
+  /** Stable per-source identity. Re-ingesting the same fact updates one row. */
+  externalId: string;
+  kind: SignalKind;
+  severity: SignalSeverity;
+  title: string;
+  detail: string;
+  value: string;
+  scoreDelta: number;
+  observedAt: string;
+  raw: unknown;
+};

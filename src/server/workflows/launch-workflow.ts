@@ -2,7 +2,7 @@ import { fetchGitHubRepository } from "@/server/clients/github";
 import { fetchOrynthPartnerData } from "@/server/clients/orynth";
 import { scoreLaunch } from "@/server/ai/scoring";
 import { findLaunchByRepo, listLaunches, upsertLaunchScore } from "@/server/db/launches";
-import { insertScoredSignals, listSignals } from "@/server/db/signals";
+import { listSignals } from "@/server/db/signals";
 import { insertLaunchSnapshot } from "@/server/db/snapshots";
 import { launches as fallbackLaunches, signals as fallbackSignals } from "@/lib/mock-data";
 import type { Launch } from "@/lib/types";
@@ -13,10 +13,6 @@ export type LaunchSnapshotInput = {
   partnerPath: string;
 };
 
-/**
- * Resolves the launch record this snapshot is about, preferring the repo the
- * caller named. Falls back to mock data only when Supabase is unconfigured.
- */
 async function resolveLaunch(owner: string, repo: string): Promise<Launch> {
   const byRepo = await findLaunchByRepo(owner, repo);
   if (byRepo) {
@@ -53,8 +49,8 @@ export async function buildLaunchSnapshot(input: LaunchSnapshotInput) {
 
   const projectId = persisted?.id ?? null;
 
-  await insertScoredSignals(projectId, scoring.signals);
-
+  // Scoring output is persisted with the run that produced it, never written
+  // back into signal_events. See migration 0005.
   const snapshotId = await insertLaunchSnapshot({
     projectId,
     source: `github:${input.owner}/${input.repo}`,
