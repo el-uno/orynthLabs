@@ -15,19 +15,37 @@ function githubHeaders() {
   return headers;
 }
 
+/**
+ * Rate limiting is not a transient fault: the window resets on the hour, so
+ * retrying seconds later always fails. Typed so callers can fail fast instead
+ * of burning their retry budget.
+ */
+export class GitHubRateLimitError extends Error {
+  readonly resetAt: Date | null;
+
+  constructor(path: string, resetAt: Date | null) {
+    const when = resetAt ? ` (resets ${resetAt.toISOString()})` : "";
+    super(`GitHub rate limit exhausted${when}; set GITHUB_TOKEN to raise it: ${path}`);
+    this.name = "GitHubRateLimitError";
+    this.resetAt = resetAt;
+  }
+}
+
 async function githubGet<T>(path: string): Promise<T> {
   const response = await fetch(`${GITHUB_API}${path}`, { headers: githubHeaders() });
 
   if (!response.ok) {
-    // Rate limiting is the failure this hits most often when unauthenticated,
-    // so name it rather than leaving a bare status code.
     const remaining = response.headers.get("x-ratelimit-remaining");
-    const rateLimited = response.status === 403 && remaining === "0";
-    throw new Error(
-      rateLimited
-        ? `GitHub rate limit exhausted (set GITHUB_TOKEN to raise it): ${path}`
-        : `GitHub request failed: ${response.status} ${path}`
-    );
+    const rateLimited =
+      (response.status === 403 || response.status === 429) && remaining === "0";
+
+    if (rateLimited) {
+      const resetHeader = response.headers.get("x-ratelimit-reset");
+      const resetAt = resetHeader ? new Date(Number(resetHeader) * 1000) : null;
+      throw new GitHubRateLimitError(path, resetAt);
+    }
+
+    throw new Error(`GitHub request failed: ${response.status} ${path}`);
   }
 
   return response.json() as Promise<T>;

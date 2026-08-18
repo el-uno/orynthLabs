@@ -1,9 +1,20 @@
-import { createWorker } from "@/server/queue";
+import { createLaunchQueue, createWorker } from "@/server/queue";
 import { scoreLaunch } from "@/server/ai/scoring";
-import { markJobStatus } from "@/server/db/jobs";
-import { findLaunchById, findLaunchByRepo, listLaunches, upsertLaunchScore } from "@/server/db/launches";
+import { markJobStatus, recordJobQueued } from "@/server/db/jobs";
+import {
+  findLaunchById,
+  findLaunchByMint,
+  findLaunchByRepo,
+  listLaunches,
+  listLaunchesWithGitHubRepo,
+  listLaunchesWithTokenMint,
+  upsertLaunchScore
+} from "@/server/db/launches";
 import { insertObservedSignals, listSignals } from "@/server/db/signals";
 import { insertLaunchSnapshot } from "@/server/db/snapshots";
+import { GitHubRateLimitError } from "@/server/clients/github";
+import { SolanaRpcError } from "@/server/clients/helius";
+import { ingestChainActivity } from "@/server/ingestion/run-helius";
 import { ingestGitHubActivity } from "@/server/ingestion/run-github";
 import { buildLaunchSnapshot } from "@/server/workflows/launch-workflow";
 import { launches as fallbackLaunches, signals as fallbackSignals } from "@/lib/mock-data";
@@ -15,6 +26,7 @@ export type LaunchJobData = {
   owner?: string;
   repo?: string;
   partnerPath?: string;
+  mint?: string;
   windowDays?: number;
   jobRecordId?: string | null;
 };
@@ -26,8 +38,59 @@ export type LaunchJobResult = {
   score?: number;
   status?: string;
   signalsIngested?: number;
+  fannedOut?: number;
   reason?: string;
 };
+
+/**
+ * Fans a sweep out into one job per tracked launch.
+ *
+ * Routed through createLaunchQueue() deliberately: a bare `new Queue()` would
+ * silently drop the retry policy that lives in the factory's defaultJobOptions.
+ *
+ * No deterministic jobId is used for de-duplication. Ingestion upserts on
+ * (source, external_id), so an overlapping run rewrites the same rows rather
+ * than appending — the idempotency work makes queue-level dedup unnecessary.
+ *
+ * Each child gets its own `jobs` row. Scheduled work never passes through an
+ * API route, so without this the scheduler would run unattended with no
+ * operational trace in the database at all.
+ */
+async function fanOut<T extends { id: string; symbol: string }>(
+  jobName: "ingest-github" | "ingest-chain" | "score-launch",
+  load: () => Promise<T[] | null>,
+  build: (launch: T) => Record<string, unknown>
+): Promise<number> {
+  const launches = await load();
+
+  if (!launches || launches.length === 0) {
+    return 0;
+  }
+
+  const queue = createLaunchQueue();
+  if (!queue) {
+    return 0;
+  }
+
+  try {
+    const entries = await Promise.all(
+      launches.map(async (launch) => {
+        const data = build(launch);
+        const jobRecordId = await recordJobQueued({
+          queueName: "launch-ops",
+          jobType: jobName,
+          payload: { ...data, scheduled: true, symbol: launch.symbol }
+        });
+        return { name: jobName, data: { ...data, jobRecordId } };
+      })
+    );
+
+    await queue.addBulk(entries);
+    return entries.length;
+  } finally {
+    await queue.close();
+  }
+}
 
 async function resolveLaunch(launchId: string | undefined): Promise<Launch> {
   if (launchId) {
@@ -47,7 +110,16 @@ async function resolveLaunch(launchId: string | undefined): Promise<Launch> {
 
 export function startLaunchOpsWorker() {
   return createWorker<LaunchJobData, LaunchJobResult>("launchOps", async (job) => {
-    const jobRecordId = job.data.jobRecordId;
+    // Jobs enqueued outside an API route (cron sweeps, fan-out children that
+    // lost their id) still need a durable record, otherwise scheduled work is
+    // invisible in the jobs table.
+    const jobRecordId =
+      job.data.jobRecordId ??
+      (await recordJobQueued({
+        queueName: "launch-ops",
+        jobType: job.name,
+        payload: { scheduled: true }
+      }));
     const attempt = currentAttempt(job);
 
     await markJobStatus(jobRecordId, "running", { attempts: attempt });
@@ -101,7 +173,23 @@ export function startLaunchOpsWorker() {
         }
 
         const launch = await findLaunchByRepo(owner, repo);
-        const signals = await ingestGitHubActivity({ owner, repo, windowDays });
+
+        let signals;
+        try {
+          signals = await ingestGitHubActivity({ owner, repo, windowDays });
+        } catch (error) {
+          // Fail fast on rate limiting. The window resets on the hour, so
+          // burning three attempts seconds apart cannot succeed.
+          if (error instanceof GitHubRateLimitError) {
+            await markJobStatus(jobRecordId, "failed", {
+              error: error.message,
+              attempts: attempt
+            });
+            return { ok: false, reason: error.message };
+          }
+          throw error;
+        }
+
         const count = await insertObservedSignals(launch?.id ?? null, signals);
 
         await markJobStatus(jobRecordId, "succeeded", { attempts: attempt });
@@ -129,6 +217,62 @@ export function startLaunchOpsWorker() {
           score: snapshot.score,
           status: snapshot.status
         };
+      }
+
+      if (job.name === "ingest-chain") {
+        const { mint, windowDays } = job.data;
+
+        if (!mint) {
+          const reason = "ingest-chain requires mint";
+          await markJobStatus(jobRecordId, "failed", { error: reason, attempts: attempt });
+          return { ok: false, reason };
+        }
+
+        const launch = await findLaunchByMint(mint);
+
+        let signals;
+        try {
+          signals = await ingestChainActivity({ mint, windowDays });
+        } catch (error) {
+          // RPC rate limiting is not transient on retry timescales.
+          if (error instanceof SolanaRpcError && error.rateLimited) {
+            await markJobStatus(jobRecordId, "failed", {
+              error: error.message,
+              attempts: attempt
+            });
+            return { ok: false, reason: error.message };
+          }
+          throw error;
+        }
+
+        const count = await insertObservedSignals(launch?.id ?? null, signals);
+
+        await markJobStatus(jobRecordId, "succeeded", { attempts: attempt });
+        return { ok: true, launchId: launch?.id, signalsIngested: count };
+      }
+
+      if (job.name === "sweep-ingestion") {
+        // One sweep covers every source. A launch may have a repo, a mint, or
+        // both, and each is fanned out independently.
+        const github = await fanOut("ingest-github", listLaunchesWithGitHubRepo, (launch) => ({
+          owner: launch.owner,
+          repo: launch.repo
+        }));
+        const chain = await fanOut("ingest-chain", listLaunchesWithTokenMint, (launch) => ({
+          mint: launch.mint
+        }));
+
+        await markJobStatus(jobRecordId, "succeeded", { attempts: attempt });
+        return { ok: true, fannedOut: github + chain };
+      }
+
+      if (job.name === "sweep-scoring") {
+        const fannedOut = await fanOut("score-launch", listLaunchesWithGitHubRepo, (launch) => ({
+          launchId: launch.id
+        }));
+
+        await markJobStatus(jobRecordId, "succeeded", { attempts: attempt });
+        return { ok: true, fannedOut };
       }
 
       const reason = `unsupported job name: ${job.name}`;

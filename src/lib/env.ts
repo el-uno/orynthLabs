@@ -8,6 +8,7 @@ type Env = {
   GITHUB_TOKEN?: string;
   X_API_BEARER_TOKEN?: string;
   HELIUS_API_KEY?: string;
+  SOLANA_RPC_URL?: string;
   ORYNTH_API_KEY?: string;
   ORYNTH_API_BASE_URL?: string;
   POOL_CREATOR_SIGNER_KEY?: string;
@@ -69,6 +70,11 @@ export const runtimeEnv = {
   },
   get heliusApiKey() {
     return env().HELIUS_API_KEY;
+  },
+  /** Explicit RPC override. Falls back to public mainnet, which is heavily
+   * rate limited but lets chain ingestion run in dev without a Helius key. */
+  get solanaRpcUrl() {
+    return env().SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
   },
   get orynthApiKey() {
     return env().ORYNTH_API_KEY;

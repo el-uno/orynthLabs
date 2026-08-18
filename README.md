@@ -83,11 +83,50 @@ queue work for the authority keys:
 
 | Secret | Guards |
 | --- | --- |
-| `API_TOKEN` | `/api/score-launch`, `/api/launch-snapshot`, `/api/jobs/{id}` |
+| `API_TOKEN` | `/api/score-launch`, `/api/launch-snapshot`, `/api/ingest-github`, `/api/ingest-chain`, `/api/jobs/{id}` |
 | `SIGNING_API_TOKEN` | `/api/enqueue-signing` |
 
 Both fail closed — an unset secret returns `503` rather than accepting
 anonymous callers. `/api/health` is intentionally open.
+
+## Chain Ingestion
+
+`POST /api/ingest-chain` normalizes Solana activity for a token mint into
+`signal_events`. Launches carry `token_mint` (migration 0006) — without it
+there is no address to query.
+
+Three signals per reading: transaction activity, holder concentration, and
+supply. **Holder concentration carries a negative score delta** — a token whose
+top 10 accounts hold most of the supply is a risk, and should pull a launch
+score down no matter how active it looks.
+
+Concentration is computed with `BigInt` over raw base units, not `uiAmount`
+floats: a 9-decimal token with a 1e9 nominal supply has 1e18 base units, well
+past 2^53 where float math silently loses precision.
+
+**Set `HELIUS_API_KEY`.** Without it the client falls back to public mainnet
+RPC, which throttles `getTokenLargestAccounts` hard, so the concentration
+signal will not resolve. Rate-limit failures are not retried.
+
+## Scheduler
+
+The worker registers cron sweeps that fan out one job per tracked launch, so
+newly added launches are picked up without touching the cron config.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `SCHEDULER_ENABLED` | `false` | Master switch. Nothing is registered unless this is exactly `"true"`. |
+| `SCHEDULER_INGEST_CRON` | `0 */6 * * *` | Ingestion sweep. |
+| `SCHEDULER_SCORE_CRON` | *(unset)* | Scoring sweep. No default — scoring calls OpenAI per launch, so it is opt-in. |
+| `SCHEDULER_TIMEZONE` | `UTC` | Cron timezone. |
+
+Schedules reconcile on every worker boot: disabled ones are removed, not just
+skipped, so turning the scheduler off does not leave a previous cron running.
+
+**Set `GITHUB_TOKEN`.** Unauthenticated GitHub allows 60 requests/hour and each
+ingestion costs 3, so a sweep over more than ~20 launches will exhaust it.
+Rate-limit failures are not retried — the window resets hourly, so retrying
+seconds later cannot succeed — and the recorded error carries the reset time.
 
 ## Testing
 

@@ -8,6 +8,7 @@
  * tighter secret scope than the web tier.
  */
 import { runtimeEnv } from "@/lib/env";
+import { registerSchedules } from "@/server/queue/scheduler";
 import { startLaunchOpsWorker } from "@/server/workers/launch-ops";
 import { startSigningWorker } from "@/server/workers/signing-ops";
 
@@ -41,6 +42,20 @@ async function main() {
   }
 
   console.log(`Started ${workers.length} worker(s): ${workers.map((w) => w.name).join(", ")}`);
+
+  // Reconcile cron schedules on every boot. upsertJobScheduler keys on the
+  // schedule id, so running several worker processes is safe; disabled
+  // schedules are removed rather than left running from a previous config.
+  const schedules = await registerSchedules();
+  for (const entry of schedules.registered) {
+    console.log(`[scheduler] active: ${entry.id} (${entry.pattern} ${runtimeEnv.schedulerTimezone})`);
+  }
+  for (const id of schedules.removed) {
+    console.log(`[scheduler] removed stale schedule: ${id}`);
+  }
+  for (const entry of schedules.skipped) {
+    console.log(`[scheduler] inactive: ${entry.id} — ${entry.reason}`);
+  }
 
   const shutdown = async (signal: string) => {
     console.log(`Received ${signal}; closing workers...`);

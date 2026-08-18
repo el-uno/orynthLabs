@@ -139,3 +139,90 @@ export async function upsertLaunchScore(input: {
 
   return toLaunch(data as LaunchRow);
 }
+
+export type LaunchRepoRef = {
+  id: string;
+  symbol: string;
+  owner: string;
+  repo: string;
+};
+
+/**
+ * Launches that name a GitHub repository. The scheduler fans out over this,
+ * so newly added launches are picked up without touching the cron config.
+ */
+export async function listLaunchesWithGitHubRepo(
+  limit = 200
+): Promise<LaunchRepoRef[] | null> {
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("launch_projects")
+    .select("id, symbol, github_owner, github_repo")
+    .not("github_owner", "is", null)
+    .not("github_repo", "is", null)
+    .order("score", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Failed to list launches with repos: ${error.message}`);
+  }
+
+  return (data as { id: string; symbol: string; github_owner: string; github_repo: string }[]).map(
+    (row) => ({ id: row.id, symbol: row.symbol, owner: row.github_owner, repo: row.github_repo })
+  );
+}
+
+export async function findLaunchByMint(mint: string): Promise<Launch | null> {
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("launch_projects")
+    .select(
+      "id, name, symbol, chain, status, score, github_owner, github_repo, partner_ref, updated_at"
+    )
+    .eq("token_mint", mint)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to load launch for mint ${mint}: ${error.message}`);
+  }
+
+  return data ? toLaunch(data as LaunchRow) : null;
+}
+
+export type LaunchMintRef = {
+  id: string;
+  symbol: string;
+  mint: string;
+};
+
+/** Launches that name a token mint. The chain sweep fans out over this. */
+export async function listLaunchesWithTokenMint(
+  limit = 200
+): Promise<LaunchMintRef[] | null> {
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("launch_projects")
+    .select("id, symbol, token_mint")
+    .not("token_mint", "is", null)
+    .order("score", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Failed to list launches with mints: ${error.message}`);
+  }
+
+  return (data as { id: string; symbol: string; token_mint: string }[]).map((row) => ({
+    id: row.id,
+    symbol: row.symbol,
+    mint: row.token_mint
+  }));
+}
