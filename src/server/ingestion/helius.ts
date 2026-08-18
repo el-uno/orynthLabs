@@ -13,6 +13,13 @@ export type ChainActivityInput = {
   supply: TokenSupply;
   largestAccounts: TokenLargestAccount[];
   signatures: SignatureInfo[];
+  /**
+   * False when the holder query could not be answered — RPC providers refuse
+   * getTokenLargestAccounts on mints with millions of token accounts. The
+   * concentration signal is then omitted rather than reported as 0%, which
+   * would read as "perfectly distributed" and be actively misleading.
+   */
+  largestAccountsAvailable?: boolean;
   now?: Date;
   windowDays?: number;
 };
@@ -101,6 +108,9 @@ export function normalizeChainActivity(input: ChainActivityInput): ObservedSigna
   });
 
   // 2. Holder concentration — a risk signal, so the delta is negative.
+  // Skipped when the holder query failed: an absent signal is honest, a 0%
+  // signal is a false all-clear.
+  if (input.largestAccountsAvailable !== false) {
   const share = topHolderShare(input.supply, input.largestAccounts, 10);
   const concentrationSeverity: SignalSeverity =
     share >= 80 ? "high" : share >= 50 ? "medium" : "low";
@@ -124,6 +134,7 @@ export function normalizeChainActivity(input: ChainActivityInput): ObservedSigna
       decimals: input.supply.decimals
     }
   });
+  }
 
   // 3. Supply reference. Informational context for the other two.
   signals.push({

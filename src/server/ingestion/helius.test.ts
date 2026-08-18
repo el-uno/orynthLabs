@@ -137,3 +137,38 @@ describe("normalizeChainActivity", () => {
     expect(signals[0].value).toBe("0 txs");
   });
 });
+
+describe("degraded holder data", () => {
+  it("omits the concentration signal when the holder query failed", () => {
+    const signals = normalizeChainActivity({
+      mint: MINT,
+      supply: supply("1000"),
+      largestAccounts: [],
+      largestAccountsAvailable: false,
+      signatures: [],
+      now: NOW
+    });
+
+    // Two signals, not three, and crucially no 0% concentration claim.
+    expect(signals).toHaveLength(2);
+    expect(signals.map((s) => s.title)).toEqual([
+      "On-chain transaction activity",
+      "Token supply"
+    ]);
+    expect(signals.some((s) => s.title.includes("concentration"))).toBe(false);
+  });
+
+  it("still reports concentration when holder data is present", () => {
+    const signals = normalizeChainActivity({
+      mint: MINT,
+      supply: supply("1000"),
+      largestAccounts: accounts(["900"]),
+      largestAccountsAvailable: true,
+      signatures: [],
+      now: NOW
+    });
+
+    expect(signals).toHaveLength(3);
+    expect(signals[1].severity).toBe("high");
+  });
+});
