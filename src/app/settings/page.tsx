@@ -14,7 +14,7 @@ export default function SettingsPage() {
   return (
     <AppShell
       title="Settings"
-      subtitle="The stack and system choices that shape the alpha."
+      subtitle="The stack and system choices behind the Founder OS alpha."
     >
       <section className="grid gap-4 rounded-3xl border border-white/10 bg-white/5 p-6">
         <h2 className="text-lg font-semibold">Configured stack</h2>

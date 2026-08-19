@@ -1,4 +1,4 @@
-# Orynth ProductLab Build Plan
+# OrynthLabs Build Plan
 
 ## Purpose
 
@@ -13,16 +13,23 @@ The aim is not to build the entire intelligence network in one pass. The goal is
 
 ## Product Vision
 
-Orynth ProductLab is a launch intelligence and execution workspace for tracking promising projects, extracting signals from multiple sources, and supporting secure backend-led workflows.
+OrynthLabs is a Founder OS: Discover -> Build -> Design -> Launch -> Grow.
+
+It identifies market gaps worth building into, understands a founder's product,
+judges whether an onchain economy makes sense around it, hands the launch to
+**Orynth** (a separate company's launchpad), and monitors the company after.
+
+Crucially, "do not tokenize yet" is a valid and expected outcome. A token
+should amplify a product's economy, not replace it.
 
 ## What The Alpha Must Prove
 
 The alpha is successful if it can:
 
-- track a curated set of launch candidates
+- track opportunities and companies, most of which have no token
 - ingest and normalize signals from multiple sources
 - score projects in a reproducible way
-- show launch readiness in a dashboard
+- show multi-axis launch readiness, including when NOT to launch
 - keep signing and authority actions strictly server-side
 - expose enough operational visibility for engineers to trust the system
 

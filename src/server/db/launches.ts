@@ -1,12 +1,23 @@
 import { supabaseAdmin } from "./client";
 import { launchStatusSchema } from "@/lib/schema";
-import type { Launch, LaunchStatus } from "@/lib/types";
+import { READINESS_DIMENSIONS } from "@/lib/types";
+import type {
+  EntityKind,
+  Launch,
+  LaunchRecommendation,
+  LaunchStatus,
+  Readiness
+} from "@/lib/types";
 
 type LaunchRow = {
   id: string;
+  slug: string;
   name: string;
-  symbol: string;
-  chain: string;
+  entity_kind: string;
+  symbol: string | null;
+  chain: string | null;
+  recommendation: string | null;
+  readiness: Record<string, unknown> | null;
   status: string;
   score: number;
   github_owner: string | null;
@@ -15,19 +26,37 @@ type LaunchRow = {
   updated_at: string;
 };
 
+const LAUNCH_COLUMNS =
+  "id, slug, name, entity_kind, symbol, chain, status, score, recommendation, readiness, " +
+  "github_owner, github_repo, partner_ref, updated_at";
+
 function toStatus(value: string): LaunchStatus {
   const parsed = launchStatusSchema.safeParse(value);
   return parsed.success ? parsed.data : "draft";
 }
 
+/** Fills absent dimensions with null — unmeasured, not zero. */
+function toReadiness(raw: Record<string, unknown> | null): Readiness {
+  const readiness = {} as Readiness;
+  for (const dimension of READINESS_DIMENSIONS) {
+    const value = raw?.[dimension];
+    readiness[dimension] = typeof value === "number" ? value : null;
+  }
+  return readiness;
+}
+
 function toLaunch(row: LaunchRow): Launch {
   return {
     id: row.id,
+    slug: row.slug,
     name: row.name,
+    entityKind: (row.entity_kind === "opportunity" ? "opportunity" : "company") as EntityKind,
     symbol: row.symbol,
     status: toStatus(row.status),
     score: row.score,
-    chain: "Solana",
+    chain: row.chain,
+    recommendation: (row.recommendation as LaunchRecommendation | null) ?? null,
+    readiness: toReadiness(row.readiness),
     updatedAt: row.updated_at
   };
 }
@@ -43,9 +72,7 @@ export async function listLaunches(limit = 50): Promise<Launch[] | null> {
 
   const { data, error } = await supabaseAdmin
     .from("launch_projects")
-    .select(
-      "id, name, symbol, chain, status, score, github_owner, github_repo, partner_ref, updated_at"
-    )
+    .select(LAUNCH_COLUMNS)
     .order("score", { ascending: false })
     .limit(limit);
 
@@ -53,7 +80,7 @@ export async function listLaunches(limit = 50): Promise<Launch[] | null> {
     throw new Error(`Failed to list launches: ${error.message}`);
   }
 
-  return (data as LaunchRow[]).map(toLaunch);
+  return (data as unknown as LaunchRow[]).map(toLaunch);
 }
 
 export async function findLaunchById(id: string): Promise<Launch | null> {
@@ -63,9 +90,7 @@ export async function findLaunchById(id: string): Promise<Launch | null> {
 
   const { data, error } = await supabaseAdmin
     .from("launch_projects")
-    .select(
-      "id, name, symbol, chain, status, score, github_owner, github_repo, partner_ref, updated_at"
-    )
+    .select(LAUNCH_COLUMNS)
     .eq("id", id)
     .maybeSingle();
 
@@ -73,7 +98,7 @@ export async function findLaunchById(id: string): Promise<Launch | null> {
     throw new Error(`Failed to load launch ${id}: ${error.message}`);
   }
 
-  return data ? toLaunch(data as LaunchRow) : null;
+  return data ? toLaunch(data as unknown as LaunchRow) : null;
 }
 
 export async function findLaunchByRepo(
@@ -86,9 +111,7 @@ export async function findLaunchByRepo(
 
   const { data, error } = await supabaseAdmin
     .from("launch_projects")
-    .select(
-      "id, name, symbol, chain, status, score, github_owner, github_repo, partner_ref, updated_at"
-    )
+    .select(LAUNCH_COLUMNS)
     .eq("github_owner", owner)
     .eq("github_repo", repo)
     .maybeSingle();
@@ -97,19 +120,25 @@ export async function findLaunchByRepo(
     throw new Error(`Failed to load launch for ${owner}/${repo}: ${error.message}`);
   }
 
-  return data ? toLaunch(data as LaunchRow) : null;
+  return data ? toLaunch(data as unknown as LaunchRow) : null;
 }
 
 /**
- * Upserts on `symbol`, which migration 0002 makes unique. Without an explicit
- * conflict target every scoring run would append a duplicate row.
+ * Upserts on `slug` (migration 0007).
+ *
+ * Previously keyed on `symbol`, which required every tracked entity to have a
+ * ticker — excluding exactly the early-stage products this system exists to
+ * assess. Slug is identity that does not depend on a token existing.
  */
 export async function upsertLaunchScore(input: {
+  slug: string;
   name: string;
-  symbol: string;
+  symbol?: string | null;
   status: LaunchStatus;
   score: number;
   rationale: string;
+  recommendation?: LaunchRecommendation | null;
+  readiness?: Readiness;
 }): Promise<Launch | null> {
   if (!supabaseAdmin) {
     return null;
@@ -119,30 +148,30 @@ export async function upsertLaunchScore(input: {
     .from("launch_projects")
     .upsert(
       {
+        slug: input.slug,
         name: input.name,
-        symbol: input.symbol,
+        symbol: input.symbol ?? null,
         status: input.status,
         score: input.score,
-        chain: "Solana",
+        recommendation: input.recommendation ?? null,
+        ...(input.readiness ? { readiness: input.readiness } : {}),
         metadata: { rationale: input.rationale }
       },
-      { onConflict: "symbol" }
+      { onConflict: "slug" }
     )
-    .select(
-      "id, name, symbol, chain, status, score, github_owner, github_repo, partner_ref, updated_at"
-    )
+    .select(LAUNCH_COLUMNS)
     .single();
 
   if (error) {
-    throw new Error(`Failed to upsert launch ${input.symbol}: ${error.message}`);
+    throw new Error(`Failed to upsert launch ${input.slug}: ${error.message}`);
   }
 
-  return toLaunch(data as LaunchRow);
+  return toLaunch(data as unknown as LaunchRow);
 }
 
 export type LaunchRepoRef = {
   id: string;
-  symbol: string;
+  slug: string;
   owner: string;
   repo: string;
 };
@@ -160,7 +189,7 @@ export async function listLaunchesWithGitHubRepo(
 
   const { data, error } = await supabaseAdmin
     .from("launch_projects")
-    .select("id, symbol, github_owner, github_repo")
+    .select("id, slug, github_owner, github_repo")
     .not("github_owner", "is", null)
     .not("github_repo", "is", null)
     .order("score", { ascending: false })
@@ -170,9 +199,9 @@ export async function listLaunchesWithGitHubRepo(
     throw new Error(`Failed to list launches with repos: ${error.message}`);
   }
 
-  return (data as { id: string; symbol: string; github_owner: string; github_repo: string }[]).map(
-    (row) => ({ id: row.id, symbol: row.symbol, owner: row.github_owner, repo: row.github_repo })
-  );
+  return (
+    data as unknown as { id: string; slug: string; github_owner: string; github_repo: string }[]
+  ).map((row) => ({ id: row.id, slug: row.slug, owner: row.github_owner, repo: row.github_repo }));
 }
 
 export async function findLaunchByMint(mint: string): Promise<Launch | null> {
@@ -182,9 +211,7 @@ export async function findLaunchByMint(mint: string): Promise<Launch | null> {
 
   const { data, error } = await supabaseAdmin
     .from("launch_projects")
-    .select(
-      "id, name, symbol, chain, status, score, github_owner, github_repo, partner_ref, updated_at"
-    )
+    .select(LAUNCH_COLUMNS)
     .eq("token_mint", mint)
     .maybeSingle();
 
@@ -192,12 +219,12 @@ export async function findLaunchByMint(mint: string): Promise<Launch | null> {
     throw new Error(`Failed to load launch for mint ${mint}: ${error.message}`);
   }
 
-  return data ? toLaunch(data as LaunchRow) : null;
+  return data ? toLaunch(data as unknown as LaunchRow) : null;
 }
 
 export type LaunchMintRef = {
   id: string;
-  symbol: string;
+  slug: string;
   mint: string;
 };
 
@@ -211,7 +238,7 @@ export async function listLaunchesWithTokenMint(
 
   const { data, error } = await supabaseAdmin
     .from("launch_projects")
-    .select("id, symbol, token_mint")
+    .select("id, slug, token_mint")
     .not("token_mint", "is", null)
     .order("score", { ascending: false })
     .limit(limit);
@@ -220,9 +247,9 @@ export async function listLaunchesWithTokenMint(
     throw new Error(`Failed to list launches with mints: ${error.message}`);
   }
 
-  return (data as { id: string; symbol: string; token_mint: string }[]).map((row) => ({
+  return (data as unknown as { id: string; slug: string; token_mint: string }[]).map((row) => ({
     id: row.id,
-    symbol: row.symbol,
+    slug: row.slug,
     mint: row.token_mint
   }));
 }

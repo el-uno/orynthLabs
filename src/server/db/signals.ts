@@ -1,6 +1,14 @@
 import { supabaseAdmin } from "./client";
+import { embedTexts, embeddingText } from "@/server/ai/embeddings";
 import { severitySchema, signalKindSchema } from "@/lib/schema";
-import type { ObservedSignal, Signal, SignalKind, SignalSeverity } from "@/lib/types";
+import { familyForKind } from "@/lib/types";
+import type {
+  ObservedSignal,
+  Signal,
+  SignalFamily,
+  SignalKind,
+  SignalSeverity
+} from "@/lib/types";
 
 type SignalRow = {
   id: string;
@@ -8,6 +16,7 @@ type SignalRow = {
   source: string;
   external_id: string | null;
   kind: string;
+  family: string | null;
   severity: string;
   title: string;
   detail: string;
@@ -18,7 +27,7 @@ type SignalRow = {
 };
 
 const SIGNAL_COLUMNS =
-  "id, project_id, source, external_id, kind, severity, title, detail, value, score_delta, observed_at, created_at";
+  "id, project_id, source, external_id, kind, family, severity, title, detail, value, score_delta, observed_at, created_at";
 
 function toKind(value: string): SignalKind {
   const parsed = signalKindSchema.safeParse(value);
@@ -33,11 +42,16 @@ function toSeverity(value: string): SignalSeverity {
 function toSignal(row: SignalRow): Signal {
   return {
     id: row.id,
+    source: row.source,
+    externalId: row.external_id,
     kind: toKind(row.kind),
+    // Legacy rows predate the column; derive rather than leaving a hole.
+    family: (row.family as SignalFamily | null) ?? familyForKind(toKind(row.kind)),
     label: row.title,
     severity: toSeverity(row.severity),
     value: row.value ?? "",
     detail: row.detail,
+    scoreDelta: row.score_delta,
     // Prefer when the event happened upstream over when we stored it.
     timestamp: row.observed_at ?? row.created_at
   };
@@ -78,17 +92,30 @@ export async function insertObservedSignals(
     return 0;
   }
 
-  const rows = signals.map((signal) => ({
+  // Best-effort embeddings. A failure here must never cost a signal, so the
+  // ingestion continues with nulls and dedup falls back to exact identity.
+  let embeddings: number[][] | null = null;
+  try {
+    embeddings = await embedTexts(
+      signals.map((s) => embeddingText({ title: s.title, detail: s.detail }))
+    );
+  } catch {
+    embeddings = null;
+  }
+
+  const rows = signals.map((signal, index) => ({
     project_id: projectId,
     source: signal.source,
     external_id: signal.externalId,
     kind: signal.kind,
+    family: signal.family,
     severity: signal.severity,
     title: signal.title,
     detail: signal.detail,
     value: signal.value,
     score_delta: signal.scoreDelta,
     observed_at: signal.observedAt,
+    embedding: embeddings?.[index] ?? null,
     raw: signal.raw ?? {}
   }));
 
@@ -101,4 +128,35 @@ export async function insertObservedSignals(
   }
 
   return rows.length;
+}
+
+/**
+ * Signals for scoring, including embeddings.
+ *
+ * Separate from `listSignals` because 1536 floats per row is an unacceptable
+ * payload for a page render but fine for a background scoring job.
+ */
+export async function listSignalsForScoring(limit = 50): Promise<Signal[] | null> {
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("signal_events")
+    .select(`${SIGNAL_COLUMNS}, embedding`)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Failed to list signals for scoring: ${error.message}`);
+  }
+
+  return (data as (SignalRow & { embedding: number[] | string | null })[]).map((row) => ({
+    ...toSignal(row),
+    // pgvector comes back as a string over PostgREST; parse it back to numbers.
+    embedding:
+      typeof row.embedding === "string"
+        ? (JSON.parse(row.embedding) as number[])
+        : (row.embedding ?? null)
+  }));
 }

@@ -2,14 +2,23 @@
 
 ## Product Summary
 
-Orynth ProductLab is a focused alpha workspace for launch intelligence, signal ingestion, scoring, and server-side execution workflows.
+OrynthLabs is an operating-intelligence layer for founders: discover what is
+worth building, understand the product, decide whether an onchain economy is
+warranted, launch through Orynth, and keep monitoring afterwards.
 
-The product is intentionally narrow:
+**Orynth is a separate company** whose launchpad OrynthLabs integrates into.
 
-- ingest signals from GitHub, X, market data, Solana RPC, and partner APIs
-- score launches and expose a prioritized queue
+The alpha is intentionally narrow:
+
+- ingest signals across five evidence families (attention, builder, capital,
+  consumer, market structure)
+- assess readiness on six axes and recommend whether to tokenize at all
 - keep sensitive signing logic on the backend
-- support a worker-based architecture for anything that should not live in the web app
+- support a worker-based architecture for anything that should not live in the
+  web app
+
+Scoring never treats one source as corroboration for itself: readiness requires
+agreement across independent evidence families.
 
 ## Architecture Goals
 

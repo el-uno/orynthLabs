@@ -10,7 +10,7 @@ import {
   listLaunchesWithTokenMint,
   upsertLaunchScore
 } from "@/server/db/launches";
-import { insertObservedSignals, listSignals } from "@/server/db/signals";
+import { insertObservedSignals, listSignalsForScoring } from "@/server/db/signals";
 import { insertLaunchSnapshot } from "@/server/db/snapshots";
 import { GitHubRateLimitError } from "@/server/clients/github";
 import { SolanaRpcError } from "@/server/clients/helius";
@@ -56,7 +56,7 @@ export type LaunchJobResult = {
  * API route, so without this the scheduler would run unattended with no
  * operational trace in the database at all.
  */
-async function fanOut<T extends { id: string; symbol: string }>(
+async function fanOut<T extends { id: string; slug: string }>(
   jobName: "ingest-github" | "ingest-chain" | "score-launch",
   load: () => Promise<T[] | null>,
   build: (launch: T) => Record<string, unknown>
@@ -79,7 +79,7 @@ async function fanOut<T extends { id: string; symbol: string }>(
         const jobRecordId = await recordJobQueued({
           queueName: "launch-ops",
           jobType: jobName,
-          payload: { ...data, scheduled: true, symbol: launch.symbol }
+          payload: { ...data, scheduled: true, slug: launch.slug }
         });
         return { name: jobName, data: { ...data, jobRecordId } };
       })
@@ -127,18 +127,21 @@ export function startLaunchOpsWorker() {
     try {
       if (job.name === "score-launch") {
         const launch = await resolveLaunch(job.data.launchId);
-        const storedSignals = await listSignals(25);
+        const storedSignals = await listSignalsForScoring(50);
         const signals =
           storedSignals && storedSignals.length > 0 ? storedSignals : fallbackSignals;
 
         const result = await scoreLaunch({ launch, signals });
 
         const persisted = await upsertLaunchScore({
+          slug: launch.slug,
           name: launch.name,
           symbol: launch.symbol,
           status: result.status,
           score: Math.round(result.score),
-          rationale: result.rationale
+          rationale: result.rationale,
+          recommendation: result.assessment.recommendation,
+          readiness: result.assessment.readiness
         });
 
         // Scoring output goes to the snapshot that produced it. It is NOT
@@ -146,8 +149,14 @@ export function startLaunchOpsWorker() {
         // the table double on every run. See migration 0005.
         const snapshotId = await insertLaunchSnapshot({
           projectId: persisted?.id ?? null,
-          source: `scoring:${launch.symbol}`,
-          payload: { scoring: result },
+          source: `scoring:${launch.slug}`,
+          // Persist the threshold reasoning alongside the score: a status
+          // nobody can interrogate is a status nobody should trust.
+          payload: {
+            scoring: result,
+            statusDecision: result.statusDecision,
+            assessment: result.assessment
+          },
           score: result.score,
           status: result.status
         });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PARTNER_PATH_ERROR, isSafePartnerPath } from "./partner-path";
 
 export const signalKindSchema = z.enum([
   "github",
@@ -15,13 +16,13 @@ export const launchStatusSchema = z.enum(["draft", "watching", "ready", "launche
 export const launchSnapshotInputSchema = z.object({
   owner: z.string().min(1),
   repo: z.string().min(1),
-  partnerPath: z.string().min(1)
+  partnerPath: z.string().min(1).refine(isSafePartnerPath, PARTNER_PATH_ERROR)
 });
 
 export const scoreLaunchInputSchema = z.object({
   owner: z.string().min(1),
   repo: z.string().min(1),
-  partnerPath: z.string().min(1)
+  partnerPath: z.string().min(1).refine(isSafePartnerPath, PARTNER_PATH_ERROR)
 });
 
 export const scoredSignalSchema = z.object({

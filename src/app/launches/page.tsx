@@ -10,8 +10,8 @@ export default async function LaunchesPage() {
 
   return (
     <AppShell
-      title="Launches"
-      subtitle="Track scored opportunities and launch readiness in one place."
+      title="Pipeline"
+      subtitle="Opportunities and companies, scored on evidence, with a tokenization recommendation."
     >
       <div className="grid gap-4">
         <div>

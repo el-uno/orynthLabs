@@ -1,24 +1,32 @@
 import "server-only";
 import { listLaunches } from "@/server/db/launches";
 import { listSignals } from "@/server/db/signals";
+import { listScoreHistoryFor } from "@/server/db/snapshots";
+import { summarizeTrend } from "@/server/scoring/trend";
 import {
   launches as fallbackLaunches,
   metricCards as fallbackMetrics,
   signals as fallbackSignals
 } from "@/lib/mock-data";
-import type { Launch, MetricCard, Signal } from "@/lib/types";
+import type { LaunchWithTrend, MetricCard, Signal } from "@/lib/types";
 
 export type DashboardData = {
-  launches: Launch[];
+  launches: LaunchWithTrend[];
   signals: Signal[];
   metrics: MetricCard[];
   /** True when Supabase is unconfigured or empty and mock data is shown. */
   usingMockData: boolean;
 };
 
-function buildMetrics(launches: Launch[], signals: Signal[]): MetricCard[] {
+function buildMetrics(launches: LaunchWithTrend[], signals: Signal[]): MetricCard[] {
   const ready = launches.filter((launch) => launch.status === "ready").length;
   const highPriority = signals.filter((signal) => signal.severity === "high").length;
+  // Net movement across every launch that has been scored more than once.
+  const moved = launches.filter((launch) => launch.trend?.delta != null);
+  const movement =
+    moved.length > 0
+      ? moved.reduce((total, launch) => total + (launch.trend?.delta ?? 0), 0)
+      : null;
   const averageScore =
     launches.length > 0
       ? Math.round(launches.reduce((total, launch) => total + launch.score, 0) / launches.length)
@@ -32,7 +40,11 @@ function buildMetrics(launches: Launch[], signals: Signal[]): MetricCard[] {
       value: String(highPriority),
       delta: highPriority > 0 ? "needs review" : "all clear"
     },
-    { label: "Ready-for-launch", value: String(ready), delta: `avg score ${averageScore}` }
+    {
+      label: "Ready-for-launch",
+      value: String(ready),
+      delta: movement === null ? `avg score ${averageScore}` : `net ${movement > 0 ? "+" : ""}${movement} across scored launches`
+    }
   ];
 }
 
@@ -51,15 +63,25 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   if (!hasLaunches && !hasSignals) {
     return {
-      launches: fallbackLaunches,
+      launches: fallbackLaunches.map((launch) => ({ ...launch })),
       signals: fallbackSignals,
       metrics: fallbackMetrics,
       usingMockData: true
     };
   }
 
-  const launches = hasLaunches ? storedLaunches : fallbackLaunches;
+  const baseLaunches = hasLaunches ? storedLaunches : fallbackLaunches;
   const signals = hasSignals ? storedSignals : fallbackSignals;
+
+  // One batched query for every launch's history, not one per row.
+  const history = hasLaunches
+    ? await listScoreHistoryFor(baseLaunches.map((launch) => launch.id))
+    : new Map();
+
+  const launches: LaunchWithTrend[] = baseLaunches.map((launch) => ({
+    ...launch,
+    trend: summarizeTrend(history.get(launch.id) ?? [])
+  }));
 
   return {
     launches,

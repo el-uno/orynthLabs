@@ -2,7 +2,7 @@ import { fetchGitHubRepository } from "@/server/clients/github";
 import { fetchOrynthPartnerData } from "@/server/clients/orynth";
 import { scoreLaunch } from "@/server/ai/scoring";
 import { findLaunchByRepo, listLaunches, upsertLaunchScore } from "@/server/db/launches";
-import { listSignals } from "@/server/db/signals";
+import { listSignalsForScoring } from "@/server/db/signals";
 import { insertLaunchSnapshot } from "@/server/db/snapshots";
 import { launches as fallbackLaunches, signals as fallbackSignals } from "@/lib/mock-data";
 import type { Launch } from "@/lib/types";
@@ -34,17 +34,20 @@ export async function buildLaunchSnapshot(input: LaunchSnapshotInput) {
   ]);
 
   const launch = await resolveLaunch(input.owner, input.repo);
-  const storedSignals = await listSignals(25);
+  const storedSignals = await listSignalsForScoring(50);
   const signals = storedSignals && storedSignals.length > 0 ? storedSignals : fallbackSignals;
 
   const scoring = await scoreLaunch({ launch, signals });
 
   const persisted = await upsertLaunchScore({
+    slug: launch.slug,
     name: launch.name,
     symbol: launch.symbol,
     status: scoring.status,
     score: Math.round(scoring.score),
-    rationale: scoring.rationale
+    rationale: scoring.rationale,
+    recommendation: scoring.assessment.recommendation,
+    readiness: scoring.assessment.readiness
   });
 
   const projectId = persisted?.id ?? null;
@@ -54,7 +57,13 @@ export async function buildLaunchSnapshot(input: LaunchSnapshotInput) {
   const snapshotId = await insertLaunchSnapshot({
     projectId,
     source: `github:${input.owner}/${input.repo}`,
-    payload: { githubRepo, partnerData, scoring },
+    payload: {
+      githubRepo,
+      partnerData,
+      scoring,
+      statusDecision: scoring.statusDecision,
+      assessment: scoring.assessment
+    },
     score: scoring.score,
     status: scoring.status
   });

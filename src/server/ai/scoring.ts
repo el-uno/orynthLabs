@@ -1,6 +1,10 @@
 import OpenAI from "openai";
 import { runtimeEnv } from "@/lib/env";
 import { launchScoreSchema } from "@/lib/schema";
+import { dedupeByMetric } from "@/server/scoring/dedupe";
+import { dedupeBySimilarity } from "@/server/scoring/similarity";
+import { assess, type ReadinessAssessment } from "@/server/scoring/readiness";
+import { resolveStatus, type StatusDecision } from "@/server/scoring/thresholds";
 import type { Launch, Signal } from "@/lib/types";
 
 const client = runtimeEnv.openAiApiKey
@@ -10,11 +14,45 @@ const client = runtimeEnv.openAiApiKey
 export type ScoreLaunchInput = {
   launch: Launch;
   signals: Signal[];
+  /** Injectable for deterministic tests of the recency rule. */
+  now?: Date;
 };
 
-export async function scoreLaunch(input: ScoreLaunchInput) {
+export type ScoredLaunch = ReturnType<typeof launchScoreSchema.parse> & {
+  /** Why the status is what it is. Persisted so the decision stays arguable. */
+  statusDecision: StatusDecision;
+  /** Six-axis readiness and the tokenization recommendation. */
+  assessment: ReadinessAssessment;
+};
+
+/**
+ * Status is decided by the deterministic threshold layer, never by the model.
+ * The model contributes a score and an explanation; sufficiency of evidence is
+ * not a judgement it is equipped to make.
+ */
+function applyThresholds(
+  parsed: ReturnType<typeof launchScoreSchema.parse>,
+  input: ScoreLaunchInput
+): ScoredLaunch {
+  // Two passes: exact identity collapses repeated sampling of one metric;
+  // similarity collapses two sources reporting the same real-world event.
+  const deduped = dedupeBySimilarity(dedupeByMetric(input.signals));
+
+  const decision = resolveStatus({
+    score: parsed.score,
+    signals: deduped,
+    currentStatus: input.launch.status,
+    now: input.now
+  });
+
+  const assessment = assess(deduped);
+
+  return { ...parsed, status: decision.status, statusDecision: decision, assessment };
+}
+
+export async function scoreLaunch(input: ScoreLaunchInput): Promise<ScoredLaunch> {
   if (!client) {
-    return launchScoreSchema.parse({
+    const fallback = launchScoreSchema.parse({
       score: input.launch.score,
       status: input.launch.status,
       rationale: "OpenAI key not configured; returning deterministic fallback score.",
@@ -25,9 +63,11 @@ export async function scoreLaunch(input: ScoreLaunchInput) {
         title: signal.label,
         detail: signal.detail,
         value: signal.value,
-        scoreDelta: signal.severity === "high" ? 8 : signal.severity === "medium" ? 4 : 1
+        scoreDelta: signal.scoreDelta
       }))
     });
+
+    return applyThresholds(fallback, input);
   }
 
   const response = await client.responses.create({
@@ -36,7 +76,10 @@ export async function scoreLaunch(input: ScoreLaunchInput) {
       {
         role: "system",
         content:
-          "You score Solana launch opportunities from a small set of signals. Return only valid JSON."
+          "You score Solana launch opportunities from a small set of signals. " +
+          "Return only valid JSON. Judge the strength of the evidence in the score " +
+          "and rationale; the status field is recomputed downstream by a " +
+          "deterministic rule, so do not optimise for it."
       },
       {
         role: "user",
@@ -88,5 +131,5 @@ export async function scoreLaunch(input: ScoreLaunchInput) {
   });
 
   const text = response.output_text;
-  return launchScoreSchema.parse(JSON.parse(text));
+  return applyThresholds(launchScoreSchema.parse(JSON.parse(text)), input);
 }

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 // `as const` keeps the hrefs as literal types so typedRoutes can validate them.
 const navItems = [
   { href: "/", label: "Overview" },
-  { href: "/launches", label: "Launches" },
+  { href: "/launches", label: "Pipeline" },
   { href: "/signals", label: "Signals" },
   { href: "/settings", label: "Settings" }
 ] as const;
@@ -24,7 +24,7 @@ export function AppShell({
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div>
             <p className="text-xs uppercase tracking-[0.35em] text-emerald-300/80">
-              Orynth ProductLab
+              OrynthLabs
             </p>
             <h1 className="mt-1 text-xl font-semibold">{title}</h1>
             <p className="text-sm text-slate-400">{subtitle}</p>

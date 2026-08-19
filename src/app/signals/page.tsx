@@ -11,7 +11,7 @@ export default async function SignalsPage() {
   return (
     <AppShell
       title="Signals"
-      subtitle="Cross-source activity from GitHub, social, market, on-chain, and partner APIs."
+      subtitle="Evidence across attention, builder, capital, consumer, and market-structure families."
     >
       <div className="grid gap-4">
         <div>

@@ -76,6 +76,7 @@ export function normalizeGitHubActivity(input: GitHubActivityInput): ObservedSig
     source: GITHUB_SOURCE,
     externalId: `${repoRef}:commits:${bucket}`,
     kind: "github",
+    family: "builder",
     severity: commitSeverity,
     title: "GitHub commit activity",
     detail: `${recentCommits.length} commits from ${commitAuthors.size} author(s) in the last ${windowDays} days`,
@@ -99,6 +100,7 @@ export function normalizeGitHubActivity(input: GitHubActivityInput): ObservedSig
     source: GITHUB_SOURCE,
     externalId: `${repoRef}:pull-requests:${bucket}`,
     kind: "github",
+    family: "builder",
     severity: prSeverity,
     title: "GitHub pull request throughput",
     detail: `${mergedPrs.length} merged in the last ${windowDays} days, ${openPrs.length} currently open`,
@@ -120,6 +122,7 @@ export function normalizeGitHubActivity(input: GitHubActivityInput): ObservedSig
     source: GITHUB_SOURCE,
     externalId: `${repoRef}:repository:${bucket}`,
     kind: "github",
+    family: "builder",
     severity: archived ? "high" : "low",
     title: archived ? "GitHub repository archived" : "GitHub repository profile",
     detail: archived

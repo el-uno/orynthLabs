@@ -14,7 +14,7 @@ export default async function HomePage() {
   return (
     <AppShell
       title="Overview"
-      subtitle="Alpha dashboard for launch intelligence, signals, and workflow control."
+      subtitle="Opportunities, companies, and the evidence behind their readiness."
     >
       <div className="grid gap-6">
         <section className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
@@ -26,13 +26,14 @@ export default async function HomePage() {
               <DataSourceBadge usingMockData={usingMockData} />
             </div>
             <h2 className="mt-4 max-w-2xl text-4xl font-semibold tracking-tight">
-              A credible four-week build for launch discovery, scoring, and
-              server-side execution.
+              Know what to build. Build the right product. Design its economy.
+              Launch it through Orynth. Grow the company.
             </h2>
             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-200">
-              This slice stays intentionally narrow: ingest signals, rank
-              opportunities, protect private keys behind the backend boundary,
-              and surface the handful of actions the team needs to move quickly.
+              Evidence is gathered across five families — attention, builder,
+              capital, consumer and market structure — and readiness is only
+              granted where independent families agree. &ldquo;Do not tokenize
+              yet&rdquo; is a first-class answer.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
@@ -53,8 +54,8 @@ export default async function HomePage() {
           <section className="rounded-3xl border border-white/10 bg-slate-950/60 p-6 shadow-lg shadow-black/10">
             <h3 className="text-lg font-semibold">Architecture guardrails</h3>
             <ul className="mt-4 space-y-3 text-sm text-slate-300">
-              <li>Frontend never handles poolCreator private keys.</li>
-              <li>Launcher signs as payer through backend workflow services.</li>
+              <li>Status is decided by deterministic rules, not by the model.</li>
+              <li>Corroboration means agreement across evidence families.</li>
               <li>Integration clients stay isolated in server-only modules.</li>
               <li>Workers can scale independently from the Next.js app.</li>
             </ul>

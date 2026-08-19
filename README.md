@@ -1,8 +1,38 @@
-# Orynth Labs
+# OrynthLabs
 
-Orynth Lab is the alpha workspace for a focused 4-week technical build around launch intelligence, chain activity, social signals, and product execution workflows.
+OrynthLabs (originally "Orynth Founder OS") is an operating-intelligence layer
+for founders. It finds market gaps worth building into, understands the product
+a founder is building, judges whether an onchain economy makes sense around it,
+hands off to **Orynth** for the launch itself, and keeps monitoring the company
+afterwards.
 
-This repo is intentionally scoped for a credible alpha, not the full intelligence network.
+**Orynth is a separate company** — a launchpad for real, actively-built online
+products. OrynthLabs integrates into it; `ORYNTH_API_KEY` and
+`ORYNTH_API_BASE_URL` are external partner credentials.
+
+**Full product context: [`docs/PRODUCT.md`](docs/PRODUCT.md)** — read it before
+changing the domain model, scoring, or anything user-facing.
+
+## The Loop
+
+```
+DISCOVER -> BUILD -> DESIGN -> LAUNCH -> GROW
+   ^                                       |
+   +---------- outcomes feed back ---------+
+```
+
+1. **Discover** — scan five signal families for gaps worth building into
+2. **Build** — understand the founder's product as a Company Graph
+3. **Design** — decide whether a token is warranted, and shape its economics
+4. **Launch** — hand off to the Orynth Launch Engine
+5. **Grow** — monitor product against market and surface divergences
+
+A single signal is weak evidence. Strength comes from **intersections** across
+families: builder activity *and* capital *and* consumer demand *and* inadequate
+existing products. The scoring layer enforces exactly that.
+
+This repo is intentionally scoped for a credible alpha, not the full
+intelligence network.
 
 ## Recommended Stack
 
@@ -37,8 +67,8 @@ This repo is intentionally scoped for a credible alpha, not the full intelligenc
 
 ## Current Alpha Slice
 
-- `Overview` dashboard with metrics, launch queue, and signal stream, read from Supabase
-- `Launches`, `Signals`, and `Settings` routes
+- `Overview` dashboard with metrics, tracked entities, and signal stream, read from Supabase
+- `Pipeline`, `Signals`, and `Settings` routes
 - Server-side integration adapters for Orynth, GitHub, and Helius
 - `POST /api/launch-snapshot` queues snapshot composition from partner and GitHub data
 - `POST /api/score-launch` queues scoring for the named repo
@@ -56,16 +86,19 @@ badge in the UI, so the dashboard stays demoable without credentials.
 ## Database And Workers
 
 - Supabase migrations live in `supabase/migrations`
-- `launch_projects` stores launch records and scoring state
-- `signal_events` stores normalized cross-source signals
+- `launch_projects` stores opportunities and companies, with six-axis readiness
+  and a tokenization recommendation (token fields are nullable)
+- `signal_events` stores observed signals, tagged with an evidence family
 - `launch_snapshots` stores API-composed snapshots
 - `jobs` stores queue-visible job state for operational tracing
 - `src/server/db` holds the repositories that read and write those tables
 - `src/server/workers` holds queue workers for scoring and signing
 - `workers/index.ts` is the standalone worker entry point (`npm run worker`)
 
-Migration `0002` adds a unique index on `launch_projects.symbol` (the upsert
-conflict target) and enables row level security on every table. No RLS policies
+Migration `0002` enabled row level security on every table and originally made
+`symbol` the unique upsert key — which migration `0007` replaced with `slug`,
+because requiring a ticker excluded exactly the early-stage products this
+system exists to assess. No RLS policies
 are defined, so only the service role key can reach the data; add explicit
 policies before pointing a browser-side Supabase client at any table.
 Migration `0003` adds attempt tracking and a BullMQ job id to `jobs`, so a
@@ -88,6 +121,24 @@ queue work for the authority keys:
 
 Both fail closed — an unset secret returns `503` rather than accepting
 anonymous callers. `/api/health` is intentionally open.
+
+## Readiness And Recommendations
+
+Readiness is six axes — product, founder, market, community, distribution and
+economic design — not a single number. An axis with no evidence scores `null`,
+never 0: "unmeasured" and "measured and poor" are different claims.
+
+The composite drives a recommendation, and the default answer is "not yet":
+
+| Recommendation | When |
+| --- | --- |
+| `insufficient_evidence` | Fewer than 3 of 6 axes have any evidence |
+| `do_not_tokenize` | A disqualifying signal, or a weak composite |
+| `build_further` | Broad coverage, middling composite |
+| `launch_now` | Composite >= 75 across at least 3 measured axes |
+
+Advising a founder to tokenize on thin evidence is the costliest mistake this
+system can make, so the thresholds are deliberately conservative.
 
 ## Chain Ingestion
 
