@@ -2,8 +2,7 @@ import { Queue, Worker, type JobsOptions, type Processor } from "bullmq";
 import { redisConnection } from "./connection";
 
 export const queueName = {
-  launchOps: "launch-ops",
-  signingOps: "signing-ops"
+  launchOps: "launch-ops"
 } as const;
 
 export type QueueKey = keyof typeof queueName;
@@ -21,19 +20,6 @@ export const launchJobOptions: JobsOptions = {
   removeOnFail: { age: 60 * 60 * 24 * 7 }
 };
 
-/**
- * Signing gets a single retry only. Signing itself is deterministic and does
- * not touch the chain today, so a retry is safe. REVISIT THIS the moment the
- * worker starts submitting transactions: at that point a retry risks a double
- * submission and this must become `attempts: 1` plus an idempotency key.
- */
-export const signingJobOptions: JobsOptions = {
-  attempts: 2,
-  backoff: { type: "exponential", delay: 1000 },
-  removeOnComplete: { age: 60 * 60 * 24, count: 1000 },
-  removeOnFail: { age: 60 * 60 * 24 * 7 }
-};
-
 export function createLaunchQueue() {
   if (!redisConnection) {
     return null;
@@ -42,17 +28,6 @@ export function createLaunchQueue() {
   return new Queue(queueName.launchOps, {
     connection: redisConnection,
     defaultJobOptions: launchJobOptions
-  });
-}
-
-export function createSigningQueue() {
-  if (!redisConnection) {
-    return null;
-  }
-
-  return new Queue(queueName.signingOps, {
-    connection: redisConnection,
-    defaultJobOptions: signingJobOptions
   });
 }
 

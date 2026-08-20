@@ -13,7 +13,6 @@ The alpha is intentionally narrow:
 - ingest signals across five evidence families (attention, builder, capital,
   consumer, market structure)
 - assess readiness on six axes and recommend whether to tokenize at all
-- keep sensitive signing logic on the backend
 - support a worker-based architecture for anything that should not live in the
   web app
 
@@ -81,9 +80,7 @@ Why:
 
 ### Chain And Wallet
 
-- Solana web3.js
-- Solana Wallet Adapter for user-facing wallets
-- Helius for RPC and enrichment
+- Helius for RPC and enrichment (raw JSON-RPC; no web3.js dependency)
 
 Why:
 
@@ -131,15 +128,6 @@ Why:
 - clean split between web and background compute
 - easy to scale the pieces independently
 
-### Secrets And Signing
-
-- KMS or custody signer for production
-- backend-only signing flow for pool creation or related authority actions
-
-Why:
-
-- the poolCreator private key must never be exposed to the frontend
-- the launcher can sign as payer, but the authority key stays server-side
 
 ## Current Repo Layout
 
@@ -167,17 +155,19 @@ flowchart LR
 
 ## Security Model
 
-The critical rule is the signing boundary:
+**This repo holds no signing keys.** Launches execute on the Orynth platform,
+so no `poolCreator` or `launcher` authority belongs on our side. The signing
+subsystem inherited from the original scaffold was removed on 2026-08-19.
 
-- `poolCreator` private key stays in backend/KMS/custody infrastructure
-- `launcher` signs as payer
-- frontend code never imports or stores private signing material
+What remains security-relevant:
 
-This rule applies to:
+- `API_TOKEN` guards every route that costs money or writes data, and fails
+  closed when unset
+- Partner API paths are origin-pinned, so a caller cannot redirect a request
+  and its bearer token to another host
+- Row level security is on with no policies, so only the service role reaches
+  the data
 
-- API routes
-- worker jobs
-- any future transaction-building code
 
 ## Design Principles
 

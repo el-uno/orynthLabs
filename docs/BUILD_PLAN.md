@@ -22,11 +22,11 @@ tell you what to do next.
 | 5. Grow | ~10% — score history and trend; no divergence detection |
 | Feedback loop | 0% — nothing records which opportunities became good companies |
 
-**Built and load-bearing:** idempotent ingestion, cron scheduler that cannot
-inflate the signal table, deterministic scoring that overrides the model,
-two-pass dedup, job tracing, bearer auth on every route that costs money, an
-enforced signing boundary. 135 tests, 7 migrations, verified against live
-GitHub, Solana RPC and Supabase.
+**Built and load-bearing:** idempotent ingestion across three families, a cron
+scheduler that cannot inflate the signal table, deterministic scoring that
+overrides the model, two-pass dedup, job tracing, and bearer auth on every
+route that costs money. 139 tests, 8 migrations, verified against live GitHub,
+npm, Solana RPC and Supabase.
 
 **The binding constraint:** `builder`, `capital` and `market_structure` have
 ingestion; `attention` and `consumer` do not. Three of six readiness axes
@@ -136,19 +136,19 @@ Turn divergences into "what the founder should do next".
 
 ## Phase E — The launch path (stage 4)
 
-### E1. Retire the signing surface — *decided 2026-08-19*
-**Decision: launches run on the Orynth platform, so OrynthLabs does not hold
-launch authority.** The `poolCreator` / `launcher` keys were inherited from the
-original scaffold on a wrong assumption about who runs the launch.
+### E1. Retire the signing surface ✅ *done 2026-08-19*
+Launches run on the Orynth platform, so OrynthLabs holds no launch authority.
+The `poolCreator` / `launcher` keys were scaffold residue from a wrong
+assumption about who runs the launch.
 
-Consequence: the signing subsystem is now dead weight *and* a standing
-liability — private keys in env, plus an endpoint whose whole purpose is to
-sign. Retiring it removes the highest-risk surface in the repo outright.
+Removed: `src/server/signing/`, `src/server/workers/signing-ops.ts`, the
+`signing-ops` queue, `POST /api/enqueue-signing`, `docs/SIGNING_BOUNDARY.md`,
+the `SIGNING_*` and `*_SIGNER_KEY` env vars, and `@solana/web3.js` — which
+nothing else used, since the Helius client speaks raw JSON-RPC.
 
-To remove: `src/server/signing/`, `src/server/workers/signing-ops.ts`, the
-`signing-ops` queue, `POST /api/enqueue-signing`, the `SIGNING_*` and
-`*_SIGNER_KEY` env vars, `docs/SIGNING_BOUNDARY.md`, and the associated tests.
-Stage 4 becomes a handoff to Orynth with no key material on our side.
+This deleted the repo's highest-risk surface outright and closed the
+instruction-level validation gate by removing what it guarded, rather than by
+building more validation.
 
 ### E2. Economic Design Studio
 Token purpose, founder economics, treasury, incentives, utility, fee strategy.
@@ -164,7 +164,6 @@ composite.
 | Gate | Before |
 | --- | --- |
 | **App-level auth** | Any hosting. API routes are token-guarded; the dashboard pages are fully public |
-| **Instruction-level signing validation** | Any real value flowing. The allowlist gates programs, not instruction data, so an allowlisted fund-moving program permits a transfer to an attacker address |
 | **`GITHUB_TOKEN` in the worker env** | Enabling the scheduler on a real list. 60 req/hour unauthenticated, 3 per ingestion |
 | **Threshold calibration** | Trusting any recommendation. Constants were set against one seeded row and one real repo |
 
@@ -175,14 +174,14 @@ composite.
 - Multi-tenant / team workflows
 - Broad multi-chain coverage
 - Consumer-grade UX polish
-- Production custody rollout beyond what E1 concludes
+- Any custody or signing role, unless Orynth later says partners co-sign
 - PostHog, structured logs, alerting — valuable, but after the product does something worth observing
 
 ---
 
 ## Non-negotiable constraints
 
-- Private keys never reach the frontend
+- No signing keys in this repo at all — launches are Orynth's to execute
 - Scoring output never re-enters `signal_events`
 - Ingestion is idempotent, keyed on `(source, external_id)`
 - Corroboration is measured across evidence **families**, never across APIs

@@ -43,7 +43,6 @@ intelligence network.
 - Vector search: pgvector
 - AI: OpenAI API
 - Agent orchestration: lightweight custom workflows or LangGraph
-- Blockchain: Solana web3.js
 - Wallet: Solana Wallet Adapter
 - Orynth integration: Partner API
 - RPC: Helius
@@ -54,7 +53,6 @@ intelligence network.
 - Cache: Redis
 - Analytics: PostHog
 - Hosting: Vercel + Railway, Fly, or AWS worker
-- Secrets/signing: KMS or custody signer for production
 
 
 ## Project Structure
@@ -62,7 +60,7 @@ intelligence network.
 - `src/app` - App Router pages and API routes
 - `src/components` - shared UI components
 - `src/lib` - utilities, runtime config, and service clients
-- `src/server` - backend-only code for signing, jobs, and integrations
+- `src/server` - backend-only code for ingestion, scoring, jobs, and integrations
 - `workers` - optional separate worker processes as the build expands
 
 ## Current Alpha Slice
@@ -73,10 +71,8 @@ intelligence network.
 - `POST /api/launch-snapshot` queues snapshot composition from partner and GitHub data
 - `POST /api/score-launch` queues scoring for the named repo
 - `GET /api/jobs/{jobRecordId}` polls the outcome of either
-- `POST /api/enqueue-signing` is authenticated and policy-gated (see below)
-- Enforced signing boundary under `src/server/signing`
 
-The three `POST` routes are asynchronous: they validate, enqueue, and return
+The `POST` routes are asynchronous: they validate, enqueue, and return
 `202` with a `jobRecordId`. They need `REDIS_URL` set and `npm run worker`
 running, and return `503` otherwise rather than silently running inline.
 
@@ -92,7 +88,7 @@ badge in the UI, so the dashboard stays demoable without credentials.
 - `launch_snapshots` stores API-composed snapshots
 - `jobs` stores queue-visible job state for operational tracing
 - `src/server/db` holds the repositories that read and write those tables
-- `src/server/workers` holds queue workers for scoring and signing
+- `src/server/workers` holds the queue worker for ingestion and scoring
 - `workers/index.ts` is the standalone worker entry point (`npm run worker`)
 
 Migration `0002` enabled row level security on every table and originally made
@@ -114,13 +110,16 @@ Every route that costs money or writes data requires a bearer token. Two
 separate secrets, so holding the general token does not grant the ability to
 queue work for the authority keys:
 
-| Secret | Guards |
-| --- | --- |
-| `API_TOKEN` | `/api/score-launch`, `/api/launch-snapshot`, `/api/ingest-github`, `/api/ingest-chain`, `/api/jobs/{id}` |
-| `SIGNING_API_TOKEN` | `/api/enqueue-signing` |
+`API_TOKEN` guards `/api/score-launch`, `/api/launch-snapshot`,
+`/api/ingest-github`, `/api/ingest-chain`, `/api/ingest-market` and
+`/api/jobs/{id}`.
 
-Both fail closed — an unset secret returns `503` rather than accepting
-anonymous callers. `/api/health` is intentionally open.
+It fails closed — an unset secret returns `503` rather than accepting anonymous
+callers. `/api/health` is intentionally open.
+
+**This repo holds no signing keys.** Launches execute on the Orynth platform,
+so no `poolCreator` or `launcher` authority belongs here. The signing subsystem
+inherited from the original scaffold was removed on 2026-08-19.
 
 ## Readiness And Recommendations
 
@@ -185,31 +184,9 @@ seconds later cannot succeed — and the recorded error carries the reset time.
 npm test
 ```
 
-Covers the signing policy, both auth guards, the deterministic scoring
-fallback, job attempt accounting, and the dashboard's mock-data fallback.
-`npm run verify:signing` runs just the security-critical subset.
-
-## Signing Safety
-
-`POST /api/enqueue-signing` is the highest-risk surface in the repo. It requires
-a bearer token and rejects any transaction that fails policy — non-allowlisted
-programs, a fee payer other than the launcher, unknown required signers, or
-oversized payloads. Both env vars below fail closed: unset means "refuse", not
-"allow".
-
-```
-SIGNING_API_TOKEN=<shared secret>
-SIGNING_ALLOWED_PROGRAM_IDS=<comma-separated base58 program IDs>
-```
-
-Verify the rules with:
-
-```bash
-npm run verify:signing
-```
-
-See `docs/SIGNING_BOUNDARY.md` for the full control list and the known gap
-around instruction-level validation.
+Covers the readiness and threshold layers, signal dedup, every ingestion
+normalizer, the auth guard, job attempt accounting, and the dashboard's
+mock-data fallback.
 
 ## Getting Started
 
@@ -224,8 +201,8 @@ npm install
 npm run dev
 ```
 
-The worker is a separate process and is the only runtime that needs the signing
-keys:
+The worker is a separate process; ingestion and scoring never run inside a
+request:
 
 ```bash
 npm run worker

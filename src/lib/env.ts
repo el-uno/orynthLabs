@@ -11,12 +11,7 @@ type Env = {
   SOLANA_RPC_URL?: string;
   ORYNTH_API_KEY?: string;
   ORYNTH_API_BASE_URL?: string;
-  POOL_CREATOR_SIGNER_KEY?: string;
-  LAUNCHER_SIGNER_KEY?: string;
-  KMS_KEY_ID?: string;
   API_TOKEN?: string;
-  SIGNING_API_TOKEN?: string;
-  SIGNING_ALLOWED_PROGRAM_IDS?: string;
   SCHEDULER_ENABLED?: string;
   SCHEDULER_INGEST_CRON?: string;
   SCHEDULER_SCORE_CRON?: string;
@@ -25,17 +20,6 @@ type Env = {
 
 function env(): Env {
   return process.env as Env;
-}
-
-function parseList(value: string | undefined) {
-  if (!value) {
-    return [];
-  }
-
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
 }
 
 /**
@@ -82,23 +66,8 @@ export const runtimeEnv = {
   get orynthApiBaseUrl() {
     return env().ORYNTH_API_BASE_URL ?? "https://api.orynth.example";
   },
-  get poolCreatorSignerKey() {
-    return env().POOL_CREATOR_SIGNER_KEY;
-  },
-  get launcherSignerKey() {
-    return env().LAUNCHER_SIGNER_KEY;
-  },
-  get kmsKeyId() {
-    return env().KMS_KEY_ID;
-  },
   get apiToken() {
     return env().API_TOKEN;
-  },
-  get signingApiToken() {
-    return env().SIGNING_API_TOKEN;
-  },
-  get signingAllowedProgramIds() {
-    return parseList(env().SIGNING_ALLOWED_PROGRAM_IDS);
   },
   /** Master switch. Off by default: a scheduler that starts itself would spend
    * money on external APIs the first time anyone runs a worker. */

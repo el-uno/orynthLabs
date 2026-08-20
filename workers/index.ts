@@ -3,14 +3,12 @@
  *
  * Run with: npm run worker
  *
- * This process is deliberately separate from the Next.js app. It is the only
- * runtime that needs the signing keys, so it can be deployed to a host with a
- * tighter secret scope than the web tier.
+ * This process is deliberately separate from the Next.js app so that ingestion
+ * and scoring never run inside a request.
  */
 import { runtimeEnv } from "@/lib/env";
 import { registerSchedules } from "@/server/queue/scheduler";
 import { startLaunchOpsWorker } from "@/server/workers/launch-ops";
-import { startSigningWorker } from "@/server/workers/signing-ops";
 
 async function main() {
   if (!runtimeEnv.redisUrl) {
@@ -19,8 +17,7 @@ async function main() {
   }
 
   const launchWorker = startLaunchOpsWorker();
-  const signingWorker = startSigningWorker();
-  const workers = [launchWorker, signingWorker].filter((worker) => worker !== null);
+  const workers = [launchWorker].filter((worker) => worker !== null);
 
   if (workers.length === 0) {
     console.error("No workers started; check the Redis connection.");

@@ -44,7 +44,6 @@ export function authorizeBearer(
 
 /**
  * Guards general API routes that cost money or write to the database.
- * Signing uses a separate, higher-privilege secret — see signing/auth.ts.
  */
 export function authorizeApiRequest(request: Request): AuthResult {
   return authorizeBearer(
