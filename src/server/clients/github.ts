@@ -102,3 +102,63 @@ export function fetchGitHubPullRequests(owner: string, repo: string) {
     `/repos/${owner}/${repo}/pulls?state=all&sort=updated&direction=desc&per_page=100`
   );
 }
+
+export type GitHubIssue = {
+  number: number;
+  title: string;
+  state: string;
+  created_at: string;
+  closed_at: string | null;
+  comments: number;
+  labels: { name: string }[];
+  user: { login?: string } | null;
+  /** Present only on pull requests. The issues endpoint returns both. */
+  pull_request?: unknown;
+};
+
+/**
+ * Issues opened since `since` (ISO 8601).
+ *
+ * The endpoint returns pull requests as well as issues — measured against
+ * vercel/next.js, 80 of 100 items were PRs. Callers must filter, or they end up
+ * measuring maintainer activity (builder evidence) while believing they are
+ * measuring user voice.
+ */
+export function fetchGitHubIssues(owner: string, repo: string, since: string) {
+  return githubGet<GitHubIssue[]>(
+    `/repos/${owner}/${repo}/issues?state=all&since=${encodeURIComponent(since)}&per_page=100`
+  );
+}
+
+/**
+ * Exact count of issues created since `sinceDate` (YYYY-MM-DD).
+ *
+ * The list endpoint returns one page mixed with pull requests, which
+ * undercounts badly on busy repositories — vercel/next.js reported 20 issues
+ * from a page of 100 against a true 289. Worse, it undercounts *most* for the
+ * products with the most users, inverting the very signal it feeds. Search
+ * filters `is:issue` server-side and returns an exact total in one request.
+ *
+ * Search has a much tighter budget than the core API (30 requests/minute
+ * authenticated), so it is used only for the count, never per-issue.
+ */
+export async function fetchGitHubIssueCount(
+  owner: string,
+  repo: string,
+  sinceDate: string
+): Promise<number | null> {
+  try {
+    const q = `repo:${owner}/${repo} is:issue created:>=${sinceDate}`;
+    const body = await githubGet<{ total_count?: number }>(
+      `/search/issues?q=${encodeURIComponent(q)}&per_page=1`
+    );
+    return typeof body.total_count === "number" ? body.total_count : null;
+  } catch (error) {
+    // A missing count degrades the reading; it must not fail the ingestion.
+    // Rate limiting still propagates so the worker can fail fast.
+    if (error instanceof GitHubRateLimitError) {
+      throw error;
+    }
+    return null;
+  }
+}

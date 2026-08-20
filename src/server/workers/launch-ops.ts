@@ -19,6 +19,7 @@ import { SolanaRpcError } from "@/server/clients/helius";
 import { NpmError } from "@/server/clients/npm";
 import { ingestChainActivity } from "@/server/ingestion/run-helius";
 import { ingestMarketStructure } from "@/server/ingestion/run-market-structure";
+import { ingestConsumerActivity } from "@/server/ingestion/run-consumer";
 import { ingestGitHubActivity } from "@/server/ingestion/run-github";
 import { buildLaunchSnapshot } from "@/server/workflows/launch-workflow";
 import { launches as fallbackLaunches, signals as fallbackSignals } from "@/lib/mock-data";
@@ -62,7 +63,12 @@ export type LaunchJobResult = {
  * operational trace in the database at all.
  */
 async function fanOut<T extends { id: string; slug: string }>(
-  jobName: "ingest-github" | "ingest-chain" | "ingest-market" | "score-launch",
+  jobName:
+    | "ingest-github"
+    | "ingest-chain"
+    | "ingest-market"
+    | "ingest-consumer"
+    | "score-launch",
   load: () => Promise<T[] | null>,
   build: (launch: T) => Record<string, unknown>
 ): Promise<number> {
@@ -265,6 +271,37 @@ export function startLaunchOpsWorker() {
         return { ok: true, launchId: launch?.id, signalsIngested: count };
       }
 
+      if (job.name === "ingest-consumer") {
+        const { owner, repo, windowDays } = job.data;
+
+        if (!owner || !repo) {
+          const reason = "ingest-consumer requires owner and repo";
+          await markJobStatus(jobRecordId, "failed", { error: reason, attempts: attempt });
+          return { ok: false, reason };
+        }
+
+        const launch = await findLaunchByRepo(owner, repo);
+
+        let signals;
+        try {
+          signals = await ingestConsumerActivity({ owner, repo, windowDays });
+        } catch (error) {
+          if (error instanceof GitHubRateLimitError) {
+            await markJobStatus(jobRecordId, "failed", {
+              error: error.message,
+              attempts: attempt
+            });
+            return { ok: false, reason: error.message };
+          }
+          throw error;
+        }
+
+        const count = await insertObservedSignals(launch?.id ?? null, signals);
+
+        await markJobStatus(jobRecordId, "succeeded", { attempts: attempt });
+        return { ok: true, launchId: launch?.id, signalsIngested: count };
+      }
+
       if (job.name === "ingest-market") {
         const { topic } = job.data;
 
@@ -311,9 +348,15 @@ export function startLaunchOpsWorker() {
         const market = await fanOut("ingest-market", listLaunchesWithMarketTopic, (launch) => ({
           topic: launch.topic
         }));
+        // Same repo list as builder ingestion, different evidence: commits are
+        // what the team does, issues are what users experience.
+        const consumer = await fanOut("ingest-consumer", listLaunchesWithGitHubRepo, (launch) => ({
+          owner: launch.owner,
+          repo: launch.repo
+        }));
 
         await markJobStatus(jobRecordId, "succeeded", { attempts: attempt });
-        return { ok: true, fannedOut: github + chain + market };
+        return { ok: true, fannedOut: github + chain + market + consumer };
       }
 
       if (job.name === "sweep-scoring") {

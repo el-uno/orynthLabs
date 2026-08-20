@@ -124,6 +124,7 @@ model must always be able to say no. Enforced by `LaunchRecommendation`.
 | No signing keys live here | Launches are Orynth's to execute; holding authority we never use is pure liability |
 | Scoring output never re-enters `signal_events` | It fed scoring its own output; the table doubled every run |
 | In `market_structure`, the sign inverts | An *absence* of maintained solutions is the positive finding — it is the "existing solution coverage: low" claim every Build Opportunity rests on |
+| `consumer` does NOT invert its sign, though `market_structure` does | One measures competitors, where absence is good news; the other measures the entity's own users, where being ignored is simply bad |
 | Entities carry a `market_topic` | A company's market is not its codebase, and an opportunity has no codebase at all |
 
 ---
@@ -133,8 +134,9 @@ model must always be able to say no. Enforced by `LaunchRecommendation`.
 - The Idea Marketplace itself — nothing currently *generates* Build Opportunities
 - Company Graph ingestion (stage 2)
 - The Economic Design Studio, so `economicDesign` always scores `null`
-- Ingestion for `attention` and `consumer` families; `builder` (GitHub),
-  `capital` (Helius) and `market_structure` (npm registry) exist today
+- Ingestion for the `attention` family — blocked on X API credits, not on a
+  token. `builder` (GitHub commits/PRs), `capital` (Helius), `market_structure`
+  (npm registry) and `consumer` (GitHub issues) exist today
 
 ---
 

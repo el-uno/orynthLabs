@@ -15,7 +15,7 @@ tell you what to do next.
 
 | Stage | State |
 | --- | --- |
-| 1. Discover | ~25% — ingestion for 3 of 5 families; nothing generates Build Opportunities |
+| 1. Discover | ~35% — ingestion for 4 of 5 families; nothing generates Build Opportunities |
 | 2. Build | ~5% — schema holds a company; no Company Graph ingestion |
 | 3. Design | ~40% — six-axis readiness and recommendation enforced; no Economic Design Studio |
 | 4. Launch | 0% — no Orynth handoff |
@@ -28,10 +28,10 @@ overrides the model, two-pass dedup, job tracing, and bearer auth on every
 route that costs money. 139 tests, 8 migrations, verified against live GitHub,
 npm, Solana RPC and Supabase.
 
-**The binding constraint:** `builder`, `capital` and `market_structure` have
-ingestion; `attention` and `consumer` do not. Three of six readiness axes
-remain unmeasurable, so the ceiling is still set by ingestion coverage rather
-than scoring logic — A1 is what lifts it.
+**The binding constraint:** four families have ingestion; `attention` does not,
+and is blocked on X API credits rather than on code. Two of six readiness axes
+remain unmeasurable — `community`, which only attention can reach, and
+`economicDesign`, which needs the Economic Design Studio (E2).
 
 ---
 
@@ -55,6 +55,10 @@ effort. Two dependencies drive everything below:
 *Unblocks: three readiness axes, and Discover entirely.*
 
 ### A1. Attention ingestion — X, then Reddit
+*Blocked on X API **credits**, not a token. The bearer token is valid and
+configured; every v2 read endpoint returns `402 credits depleted`, including
+the cheapest single-tweet fetch. Reddit may be the cheaper first source.*
+
 **Highest leverage single change.** Unlocks `community` and `distribution`,
 taking measurable axes from 3 to 5 of 6. Until this exists, no entity can be
 assessed as launch-ready no matter how good it is.
@@ -62,14 +66,17 @@ assessed as launch-ready no matter how good it is.
 Follow the proven shape: pure normalizer + thin IO wrapper + job type + route +
 fan-out entry. Signals must carry `family: "attention"`.
 
-*Blocked on:* `X_API_BEARER_TOKEN`.
 *Watch for:* rate limits far tighter than GitHub's; reuse the fail-fast pattern.
 
-### A2. Consumer ingestion — product adoption and usage
-Strengthens `product` and `distribution` with demand-side evidence rather than
-build-side proxies. App rankings, search behaviour, reviews, complaints.
+### A2. Consumer ingestion — user voice ✅ *shipped 2026-08-19*
+GitHub issues, using the existing token. Same API as the builder family,
+different evidence: commits are what the team does, issues are what users
+experience. Three signals — user-reported demand, maintainer responsiveness,
+issue composition. `distribution` moved from `null` to 53 and `product` from
+59 to 62; measurable axes went from 3 to 4 of 6.
 
-*Blocked on:* source selection — this is the least obvious family to source.
+Remaining in this family: app rankings, search behaviour and reviews have no
+source yet, and all are paid.
 
 ### A3. Market-structure ingestion — competitors and gaps ✅ *shipped 2026-08-19*
 npm registry (public, no credentials) measuring existing solution coverage,
