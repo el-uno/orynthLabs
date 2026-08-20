@@ -1,252 +1,192 @@
 # OrynthLabs Build Plan
 
-## Purpose
+Forward plan from the current state. Read [`PRODUCT.md`](PRODUCT.md) first — it
+defines what the product is; this defines what to build next and in what order.
 
-This plan describes how the product moves from idea to a credible alpha and then toward a more durable platform.
+Last revised: 2026-08-19
 
-The aim is not to build the entire intelligence network in one pass. The goal is a narrow, usable system that proves the core workflow:
+---
 
-1. ingest signals
-2. score launch opportunities
-3. protect secrets and signing
-4. surface the highest-value actions
+## Where we are
 
-## Product Vision
+An **assessment engine**, not yet a Founder OS. It can judge a company you
+point it at. It cannot yet tell you what to build, understand your product, or
+tell you what to do next.
 
-OrynthLabs is a Founder OS: Discover -> Build -> Design -> Launch -> Grow.
+| Stage | State |
+| --- | --- |
+| 1. Discover | ~25% — ingestion for 3 of 5 families; nothing generates Build Opportunities |
+| 2. Build | ~5% — schema holds a company; no Company Graph ingestion |
+| 3. Design | ~40% — six-axis readiness and recommendation enforced; no Economic Design Studio |
+| 4. Launch | 0% — no Orynth handoff |
+| 5. Grow | ~10% — score history and trend; no divergence detection |
+| Feedback loop | 0% — nothing records which opportunities became good companies |
 
-It identifies market gaps worth building into, understands a founder's product,
-judges whether an onchain economy makes sense around it, hands the launch to
-**Orynth** (a separate company's launchpad), and monitors the company after.
+**Built and load-bearing:** idempotent ingestion, cron scheduler that cannot
+inflate the signal table, deterministic scoring that overrides the model,
+two-pass dedup, job tracing, bearer auth on every route that costs money, an
+enforced signing boundary. 135 tests, 7 migrations, verified against live
+GitHub, Solana RPC and Supabase.
 
-Crucially, "do not tokenize yet" is a valid and expected outcome. A token
-should amplify a product's economy, not replace it.
+**The binding constraint:** `builder`, `capital` and `market_structure` have
+ingestion; `attention` and `consumer` do not. Three of six readiness axes
+remain unmeasurable, so the ceiling is still set by ingestion coverage rather
+than scoring logic — A1 is what lifts it.
 
-## What The Alpha Must Prove
+---
 
-The alpha is successful if it can:
+## Ordering principle
 
-- track opportunities and companies, most of which have no token
-- ingest and normalize signals from multiple sources
-- score projects in a reproducible way
-- show multi-axis launch readiness, including when NOT to launch
-- keep signing and authority actions strictly server-side
-- expose enough operational visibility for engineers to trust the system
+Work is ordered by **what unblocks the most downstream capability**, not by
+effort. Two dependencies drive everything below:
 
-## Out Of Scope For Alpha
+1. **Discover depends on breadth.** Market gaps are found at *intersections* —
+   "attention high, capital flowing, existing products inadequate". That
+   sentence cannot be evaluated with GitHub and an RPC endpoint. Broad
+   ingestion is a prerequisite for the Idea Marketplace, not a parallel track.
+2. **The moat depends on elapsed time.** The feedback loop needs outcomes
+   observed over months. Instrumenting it is cheap and starts the clock, so it
+   comes far earlier than its immediate value suggests.
 
-The following are intentionally deferred:
+---
 
-- a full multi-tenant intelligence platform
-- generalized agent marketplace behavior
-- complex governance or approval flows
-- broad protocol coverage across every chain
-- highly polished consumer-grade UX
-- production-grade custody rollout unless required for a specific workflow
+## Phase A — Raise the ceiling (ingestion breadth)
 
-## Build Phases
+*Unblocks: three readiness axes, and Discover entirely.*
 
-### Phase 0: Foundation
+### A1. Attention ingestion — X, then Reddit
+**Highest leverage single change.** Unlocks `community` and `distribution`,
+taking measurable axes from 3 to 5 of 6. Until this exists, no entity can be
+assessed as launch-ready no matter how good it is.
 
-Status: complete in scaffold form
+Follow the proven shape: pure normalizer + thin IO wrapper + job type + route +
+fan-out entry. Signals must carry `family: "attention"`.
 
-Deliverables:
+*Blocked on:* `X_API_BEARER_TOKEN`.
+*Watch for:* rate limits far tighter than GitHub's; reuse the fail-fast pattern.
 
-- Next.js app scaffold
-- Tailwind-ready UI system
-- route handlers for health and workflow entry points
-- repo docs and environment template
-- clear signing boundary documentation
+### A2. Consumer ingestion — product adoption and usage
+Strengthens `product` and `distribution` with demand-side evidence rather than
+build-side proxies. App rankings, search behaviour, reviews, complaints.
 
-### Phase 1: Data Model And Infrastructure
+*Blocked on:* source selection — this is the least obvious family to source.
 
-Goal: establish the persistent model for launches, signals, snapshots, and jobs.
+### A3. Market-structure ingestion — competitors and gaps ✅ *shipped 2026-08-19*
+npm registry (public, no credentials) measuring existing solution coverage,
+incumbent staleness and adoption concentration against an entity's
+`market_topic` (migration 0008). `market` readiness rose from 74 to 86 on live
+data.
 
-Deliverables:
+Remaining in this family: pricing gaps, UX quality and regulatory change have
+no source yet.
 
-- Supabase/Postgres schema
-- seed data for initial launch candidates
-- migrations for launch projects, signal events, snapshots, and job records
-- indexes for status, score, and recency
+### A4. Orynth partner adapter
+*Blocked on:* real base URL (still `api.orynth.example`) and a **sample
+response body** — the response shape defines the normalizer, and the key alone
+unblocks nothing.
 
-Why this comes early:
+---
 
-- all downstream features depend on a stable schema
-- scoring, UI, and workers need shared source-of-truth records
+## Phase B — The entry point (Idea Marketplace)
 
-### Phase 2: Signal Ingestion
+*Depends on Phase A. Without it the loop has no beginning and no moat.*
 
-Goal: pull in the first useful sources and normalize them.
+### B1. Opportunity synthesis
+Detect intersections across families and emit `entity_kind: "opportunity"`
+rows. The schema already holds them; nothing creates them. The existing
+threshold layer's family-corroboration logic is the right primitive to build on.
 
-Deliverables:
+### B2. Opportunity scoring and presentation
+Opportunity score, "why now", signals behind it, observed gap, possible
+products, potential users, monetization paths, Orynth economic fit — the
+structured shape defined in `PRODUCT.md`.
 
-- GitHub ingestion for repository activity
-- Orynth partner API adapter
-- X signal adapter
-- market-data adapter for Solana launch context
-- Helius-based chain lookups
+### B3. Feedback instrumentation
+Record which opportunities were claimed, by whom, and what happened. **Start
+this with B1 even though it returns nothing for months** — the moat is
+longitudinal, and data not captured now cannot be recovered later.
 
-Expected outputs:
+---
 
-- normalized signal objects
-- stored signal history
-- source metadata and provenance
+## Phase C — Understand the company (stage 2)
 
-### Phase 3: Scoring And Extraction
+### C1. Company Graph ingestion
+Website, product docs, socials, analytics, users, revenue. Turns a tracked row
+into a company we actually understand.
 
-Goal: turn raw signals into launch assessments.
+### C2. Founder signal
+`founder` readiness is currently inferred from commit activity alone, which is
+a weak proxy. Needs real founder-level evidence.
 
-Deliverables:
+---
 
-- OpenAI scoring pipeline
-- schema-validated structured outputs
-- deterministic fallback when AI credentials are missing
-- launch status transitions based on score thresholds
+## Phase D — Post-launch value (stage 5)
 
-Expected behavior:
+### D1. Divergence detection
+The actual product value of stage 5: "product adoption +42% while attention
+−18%" (under-discovered) or "token volume +310% while usage −12% and dev
+activity −34%" (market ahead of fundamentals). Requires score history across
+families over time — history already accumulates, so this becomes possible
+without new ingestion.
 
-- low signal density leads to draft or watching
-- meaningful signal clusters raise readiness
-- scoring outputs remain explainable
+### D2. Recommendation engine
+Turn divergences into "what the founder should do next".
 
-### Phase 4: Worker System
+---
 
-Goal: move non-request work out of the web process.
+## Phase E — The launch path (stage 4)
 
-Deliverables:
+### E1. Retire the signing surface — *decided 2026-08-19*
+**Decision: launches run on the Orynth platform, so OrynthLabs does not hold
+launch authority.** The `poolCreator` / `launcher` keys were inherited from the
+original scaffold on a wrong assumption about who runs the launch.
 
-- Redis-backed queue
-- BullMQ workers
-- scoring jobs
-- signing jobs
-- job persistence for visibility
+Consequence: the signing subsystem is now dead weight *and* a standing
+liability — private keys in env, plus an endpoint whose whole purpose is to
+sign. Retiring it removes the highest-risk surface in the repo outright.
 
-Why this matters:
+To remove: `src/server/signing/`, `src/server/workers/signing-ops.ts`, the
+`signing-ops` queue, `POST /api/enqueue-signing`, the `SIGNING_*` and
+`*_SIGNER_KEY` env vars, `docs/SIGNING_BOUNDARY.md`, and the associated tests.
+Stage 4 becomes a handoff to Orynth with no key material on our side.
 
-- prevents route handlers from becoming long-running orchestration code
-- makes retries and operational tracing easier
+### E2. Economic Design Studio
+Token purpose, founder economics, treasury, incentives, utility, fee strategy.
+Until this exists `economicDesign` scores `null` permanently, capping every
+composite.
 
-### Phase 5: Server-Side Signing
+### E3. Orynth Launch Engine handoff
 
-Goal: enforce the custody boundary.
+---
 
-Deliverables:
+## Gates — not phases, but blocking
 
-- backend-only signer module
-- `poolCreator` key stored outside the frontend
-- launcher payer signing flow
-- transaction assembly and submission pattern
+| Gate | Before |
+| --- | --- |
+| **App-level auth** | Any hosting. API routes are token-guarded; the dashboard pages are fully public |
+| **Instruction-level signing validation** | Any real value flowing. The allowlist gates programs, not instruction data, so an allowlisted fund-moving program permits a transfer to an attacker address |
+| **`GITHUB_TOKEN` in the worker env** | Enabling the scheduler on a real list. 60 req/hour unauthenticated, 3 per ingestion |
+| **Threshold calibration** | Trusting any recommendation. Constants were set against one seeded row and one real repo |
 
-Security requirement:
+---
 
-- the frontend must never hold or see `poolCreator` private material
+## Deferred
 
-### Phase 6: Product UX
+- Multi-tenant / team workflows
+- Broad multi-chain coverage
+- Consumer-grade UX polish
+- Production custody rollout beyond what E1 concludes
+- PostHog, structured logs, alerting — valuable, but after the product does something worth observing
 
-Goal: make the alpha useful for humans, not just machines.
+---
 
-Deliverables:
+## Non-negotiable constraints
 
-- dashboard overview
-- launch queue and signal stream
-- per-project detail views
-- status transitions and notes
-- operational feedback about scoring and signing
-
-### Phase 7: Observability And Hardening
-
-Goal: prepare the alpha for real usage.
-
-Deliverables:
-
-- PostHog analytics
-- structured logs
-- error handling and alerting
-- rate-limit aware external integrations
-- audit-friendly job history
-
-## Current Milestone Map
-
-### Milestone 1
-
-Status: in progress
-
-- dashboard shell
-- launch queue and signal stream
-- server workflow adapters
-- database schema scaffold
-- scoring and worker skeletons
-
-### Milestone 2
-
-Planned:
-
-- connect live Supabase client usage
-- implement first real ingestion jobs
-- persist scores and signals
-- expose project detail pages
-
-### Milestone 3
-
-Planned:
-
-- add signing job execution against a real Solana transaction flow
-- wire in production secret storage
-- add operational logs and analytics
-
-## Functional Roadmap
-
-### Week 1
-
-- lock the schema
-- wire env handling
-- confirm route handlers and mock data
-- set up worker process entry points
-
-### Week 2
-
-- ingest GitHub and Orynth partner data
-- normalize signals into the database
-- score launches with typed AI outputs
-
-### Week 3
-
-- add signing workflow
-- connect queue consumers
-- add retries and job status persistence
-
-### Week 4
-
-- improve dashboard detail views
-- add analytics
-- harden error handling
-- prepare alpha release notes
-
-## Acceptance Criteria For Alpha
-
-The alpha is ready when:
-
-- engineers can understand the entire system from these docs
-- the dashboard shows meaningful launch and signal state
-- the scoring pipeline can produce stable output
-- background jobs can be queued and processed
-- signing remains server-side only
-- the project can be extended without rewriting the core model
-
-## Finished Product Direction
-
-If the alpha proves useful, the longer-term product can evolve into:
-
-- a richer launch intelligence graph
-- automated monitoring and alerts
-- more advanced cross-source ranking
-- multi-tenant or team-based workflows
-- deeper protocol-specific execution tooling
-
-## Non-Negotiable Constraints
-
-- Keep the scope tight until the alpha is validated
-- Keep private keys out of the frontend
-- Prefer clear data contracts over ad hoc objects
-- Add new integrations behind server-only modules
-- Do not expand into adjacent features without a product reason
+- Private keys never reach the frontend
+- Scoring output never re-enters `signal_events`
+- Ingestion is idempotent, keyed on `(source, external_id)`
+- Corroboration is measured across evidence **families**, never across APIs
+- An unmeasured readiness axis is `null`, never `0`
+- "Do not tokenize yet" remains a first-class outcome
+- Anything that enqueues work goes through the queue factories, or it silently
+  loses the retry policy

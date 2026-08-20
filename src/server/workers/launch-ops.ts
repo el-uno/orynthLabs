@@ -3,10 +3,12 @@ import { scoreLaunch } from "@/server/ai/scoring";
 import { markJobStatus, recordJobQueued } from "@/server/db/jobs";
 import {
   findLaunchById,
+  findLaunchByMarketTopic,
   findLaunchByMint,
   findLaunchByRepo,
   listLaunches,
   listLaunchesWithGitHubRepo,
+  listLaunchesWithMarketTopic,
   listLaunchesWithTokenMint,
   upsertLaunchScore
 } from "@/server/db/launches";
@@ -14,7 +16,9 @@ import { insertObservedSignals, listSignalsForScoring } from "@/server/db/signal
 import { insertLaunchSnapshot } from "@/server/db/snapshots";
 import { GitHubRateLimitError } from "@/server/clients/github";
 import { SolanaRpcError } from "@/server/clients/helius";
+import { NpmError } from "@/server/clients/npm";
 import { ingestChainActivity } from "@/server/ingestion/run-helius";
+import { ingestMarketStructure } from "@/server/ingestion/run-market-structure";
 import { ingestGitHubActivity } from "@/server/ingestion/run-github";
 import { buildLaunchSnapshot } from "@/server/workflows/launch-workflow";
 import { launches as fallbackLaunches, signals as fallbackSignals } from "@/lib/mock-data";
@@ -27,6 +31,7 @@ export type LaunchJobData = {
   repo?: string;
   partnerPath?: string;
   mint?: string;
+  topic?: string;
   windowDays?: number;
   jobRecordId?: string | null;
 };
@@ -57,7 +62,7 @@ export type LaunchJobResult = {
  * operational trace in the database at all.
  */
 async function fanOut<T extends { id: string; slug: string }>(
-  jobName: "ingest-github" | "ingest-chain" | "score-launch",
+  jobName: "ingest-github" | "ingest-chain" | "ingest-market" | "score-launch",
   load: () => Promise<T[] | null>,
   build: (launch: T) => Record<string, unknown>
 ): Promise<number> {
@@ -260,6 +265,39 @@ export function startLaunchOpsWorker() {
         return { ok: true, launchId: launch?.id, signalsIngested: count };
       }
 
+      if (job.name === "ingest-market") {
+        const { topic } = job.data;
+
+        if (!topic) {
+          const reason = "ingest-market requires topic";
+          await markJobStatus(jobRecordId, "failed", { error: reason, attempts: attempt });
+          return { ok: false, reason };
+        }
+
+        const launch = await findLaunchByMarketTopic(topic);
+
+        let signals;
+        try {
+          signals = await ingestMarketStructure({ topic });
+        } catch (error) {
+          // Registry rate limiting resets on a short window but not within a
+          // retry burst; fail fast rather than spend the budget.
+          if (error instanceof NpmError && error.rateLimited) {
+            await markJobStatus(jobRecordId, "failed", {
+              error: error.message,
+              attempts: attempt
+            });
+            return { ok: false, reason: error.message };
+          }
+          throw error;
+        }
+
+        const count = await insertObservedSignals(launch?.id ?? null, signals);
+
+        await markJobStatus(jobRecordId, "succeeded", { attempts: attempt });
+        return { ok: true, launchId: launch?.id, signalsIngested: count };
+      }
+
       if (job.name === "sweep-ingestion") {
         // One sweep covers every source. A launch may have a repo, a mint, or
         // both, and each is fanned out independently.
@@ -270,9 +308,12 @@ export function startLaunchOpsWorker() {
         const chain = await fanOut("ingest-chain", listLaunchesWithTokenMint, (launch) => ({
           mint: launch.mint
         }));
+        const market = await fanOut("ingest-market", listLaunchesWithMarketTopic, (launch) => ({
+          topic: launch.topic
+        }));
 
         await markJobStatus(jobRecordId, "succeeded", { attempts: attempt });
-        return { ok: true, fannedOut: github + chain };
+        return { ok: true, fannedOut: github + chain + market };
       }
 
       if (job.name === "sweep-scoring") {

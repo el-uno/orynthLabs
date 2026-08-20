@@ -23,6 +23,7 @@ export const launches: Launch[] = [
     status: "watching",
     score: 87,
     chain: null,
+    marketTopic: "agent treasury infrastructure",
     recommendation: "insufficient_evidence",
     readiness: {
       product: null,
@@ -43,6 +44,7 @@ export const launches: Launch[] = [
     status: "watching",
     score: 78,
     chain: null,
+    marketTopic: "onchain index products",
     recommendation: "build_further",
     readiness: {
       product: 74,
@@ -63,6 +65,7 @@ export const launches: Launch[] = [
     status: "launched",
     score: 92,
     chain: "Solana",
+    marketTopic: "solana perpetuals",
     recommendation: "launch_now",
     readiness: {
       product: 88,

@@ -16,6 +16,7 @@ type LaunchRow = {
   entity_kind: string;
   symbol: string | null;
   chain: string | null;
+  market_topic: string | null;
   recommendation: string | null;
   readiness: Record<string, unknown> | null;
   status: string;
@@ -27,7 +28,7 @@ type LaunchRow = {
 };
 
 const LAUNCH_COLUMNS =
-  "id, slug, name, entity_kind, symbol, chain, status, score, recommendation, readiness, " +
+  "id, slug, name, entity_kind, symbol, chain, status, score, market_topic, recommendation, readiness, " +
   "github_owner, github_repo, partner_ref, updated_at";
 
 function toStatus(value: string): LaunchStatus {
@@ -55,6 +56,7 @@ function toLaunch(row: LaunchRow): Launch {
     status: toStatus(row.status),
     score: row.score,
     chain: row.chain,
+    marketTopic: row.market_topic,
     recommendation: (row.recommendation as LaunchRecommendation | null) ?? null,
     readiness: toReadiness(row.readiness),
     updatedAt: row.updated_at
@@ -252,4 +254,54 @@ export async function listLaunchesWithTokenMint(
     slug: row.slug,
     mint: row.token_mint
   }));
+}
+
+export type LaunchTopicRef = {
+  id: string;
+  slug: string;
+  topic: string;
+};
+
+/** Entities that declare a market topic. The market sweep fans out over this. */
+export async function listLaunchesWithMarketTopic(
+  limit = 200
+): Promise<LaunchTopicRef[] | null> {
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("launch_projects")
+    .select("id, slug, market_topic")
+    .not("market_topic", "is", null)
+    .order("score", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Failed to list launches with market topics: ${error.message}`);
+  }
+
+  return (data as unknown as { id: string; slug: string; market_topic: string }[]).map((row) => ({
+    id: row.id,
+    slug: row.slug,
+    topic: row.market_topic
+  }));
+}
+
+export async function findLaunchByMarketTopic(topic: string): Promise<Launch | null> {
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("launch_projects")
+    .select(LAUNCH_COLUMNS)
+    .eq("market_topic", topic)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to load launch for topic ${topic}: ${error.message}`);
+  }
+
+  return data ? toLaunch(data as unknown as LaunchRow) : null;
 }

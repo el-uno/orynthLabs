@@ -63,6 +63,11 @@ strategy.
 Hands off to Orynth. The founder should not have to move manually between
 strategy tools, token tools and launch interfaces.
 
+**OrynthLabs holds no launch authority** (decided 2026-08-19). Launches execute
+on the Orynth platform, so no `poolCreator` or `launcher` key belongs on our
+side. The signing subsystem still present in the repo is scaffold residue and
+is scheduled for removal — see `BUILD_PLAN.md` E1.
+
 ### 5. Grow — Company Growth Intelligence
 Monitors both sides after launch — product (users, retention, revenue, shipping
 velocity) and market (holders, volume, liquidity, wallet quality, attention) —
@@ -117,6 +122,8 @@ model must always be able to say no. Enforced by `LaunchRecommendation`.
 | An unmeasured axis is `null`, never `0` | "We have not researched this" and "this is bad" are different claims |
 | Signals carry a signed `scoreDelta` | Severity says how *notable* a signal is, not whether it is good. An archived repo and a commit surge are both "high" |
 | Scoring output never re-enters `signal_events` | It fed scoring its own output; the table doubled every run |
+| In `market_structure`, the sign inverts | An *absence* of maintained solutions is the positive finding — it is the "existing solution coverage: low" claim every Build Opportunity rests on |
+| Entities carry a `market_topic` | A company's market is not its codebase, and an opportunity has no codebase at all |
 
 ---
 
@@ -125,8 +132,8 @@ model must always be able to say no. Enforced by `LaunchRecommendation`.
 - The Idea Marketplace itself — nothing currently *generates* Build Opportunities
 - Company Graph ingestion (stage 2)
 - The Economic Design Studio, so `economicDesign` always scores `null`
-- Ingestion for `attention`, `consumer` and `market_structure` families; only
-  `builder` (GitHub) and `capital` (Helius) exist today
+- Ingestion for `attention` and `consumer` families; `builder` (GitHub),
+  `capital` (Helius) and `market_structure` (npm registry) exist today
 
 ---
 

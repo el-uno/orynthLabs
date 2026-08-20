@@ -135,6 +135,8 @@ export type Launch = {
   status: LaunchStatus;
   score: number;
   chain: string | null;
+  /** The problem space this entity competes in; drives market-structure evidence. */
+  marketTopic: string | null;
   recommendation: LaunchRecommendation | null;
   readiness: Readiness;
   updatedAt: string;

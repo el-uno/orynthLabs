@@ -32,7 +32,16 @@ export const DIMENSION_FAMILIES: Record<ReadinessDimension, SignalFamily[]> = {
 export const MIN_DIMENSIONS_FOR_RECOMMENDATION = 3;
 export const LAUNCH_NOW_MIN_COMPOSITE = 75;
 export const BUILD_FURTHER_MIN_COMPOSITE = 45;
-/** A single signal this negative disqualifies a launch on its own. */
+/**
+ * A single signal this negative disqualifies a launch on its own.
+ *
+ * KNOWN FRAGILITY: "disqualifying" is inferred from magnitude rather than
+ * declared. Any new signal that happens to reach this value becomes a veto by
+ * accident — market-structure crowding did exactly that, turning a strong
+ * company into "do not tokenize" on competition alone. The durable fix is an
+ * explicit `blocking` flag on the signal; until then, new negative signals
+ * must stay above this magnitude unless they are genuinely disqualifying.
+ */
 export const BLOCKING_DELTA = -10;
 
 function familyOf(signal: Signal): SignalFamily {
