@@ -17,6 +17,18 @@ export const STALE_MONTHS = 12;
 export const DOMINANCE_THRESHOLD = 0.7;
 
 /**
+ * Incumbents required before concentration is measured at all.
+ *
+ * Calibrated against 16 live topics. At two incumbents one of them almost
+ * always holds more than 70% of downloads, so the "category has an owner"
+ * penalty fired on genuinely sparse markets and swamped the scarcity bonus:
+ * `mcp server framework` has two incumbents — an open field — yet scored a net
+ * negative gap. It was the only case where the incumbent count and the gap
+ * contradicted each other, and it was systematic rather than noise.
+ */
+export const MIN_INCUMBENTS_FOR_CONCENTRATION = 4;
+
+/**
  * Share of the topic's meaningful terms a package must mention to count as
  * addressing it.
  *
@@ -27,6 +39,21 @@ export const DOMINANCE_THRESHOLD = 0.7;
  * not better — it selects for popularity, and the popular matches are the
  * generic ones. Relevance has to be established before adoption is consulted.
  */
+/**
+ * Terms a package must match to count as addressing the topic.
+ *
+ * Scales with topic length. A flat 50% let a four-word topic qualify on two
+ * words: `multi agent treasury coordination` returned six "incumbents" that
+ * were generic agent and coordination packages, none of which address treasury
+ * coordination. Longer topics are more specific, so they demand more overlap.
+ */
+export function requiredTermHits(termCount: number): number {
+  if (termCount <= 2) return 1;
+  if (termCount === 3) return 2;
+  return 3;
+}
+
+/** Retained for reporting; relevance itself is decided by `requiredTermHits`. */
 export const MIN_TERM_COVERAGE = 0.5;
 
 /**
@@ -88,8 +115,13 @@ export function relevantCandidates(
   topic: string,
 ): Candidate[] {
   const terms = topicTerms(topic);
+  if (terms.length === 0) {
+    return candidates;
+  }
+
+  const needed = requiredTermHits(terms.length);
   return candidates.filter(
-    (c) => termCoverage(c.pkg, terms) >= MIN_TERM_COVERAGE,
+    (c) => Math.round(termCoverage(c.pkg, terms) * terms.length) >= needed,
   );
 }
 
@@ -103,6 +135,11 @@ export type MarketStructureInput = {
   candidates: Candidate[];
   /** How many results the search returned before relevance narrowed them. */
   examined?: number;
+  /**
+   * True when relevance produced more candidates than adoption lookups allow.
+   * The incumbent count is then a floor, not a total.
+   */
+  lookupsCapped?: boolean;
   now?: Date;
 };
 
@@ -150,6 +187,7 @@ export function normalizeMarketStructure(
 
   // 1. Solution coverage — the core market-gap claim.
   const count = incumbents.length;
+  const censored = input.lookupsCapped === true && count === input.candidates.length;
   let coverageSeverity: SignalSeverity;
   let coverageDelta: number;
   let coverageNote: string;
@@ -184,8 +222,10 @@ export function normalizeMarketStructure(
     family: "market_structure",
     severity: coverageSeverity,
     title: "Existing solution coverage",
-    detail: `${count} maintained package(s) above ${CREDIBLE_MIN_WEEKLY_DOWNLOADS} weekly downloads — ${coverageNote}`,
-    value: `${count} incumbent${count === 1 ? "" : "s"}`,
+    detail: censored
+      ? `at least ${count} maintained package(s) above ${CREDIBLE_MIN_WEEKLY_DOWNLOADS} weekly downloads (adoption lookups capped) — ${coverageNote}`
+      : `${count} maintained package(s) above ${CREDIBLE_MIN_WEEKLY_DOWNLOADS} weekly downloads — ${coverageNote}`,
+    value: censored ? `${count}+ incumbents` : `${count} incumbent${count === 1 ? "" : "s"}`,
     scoreDelta: coverageDelta,
     observedAt: now.toISOString(),
     raw: {
@@ -194,6 +234,7 @@ export function normalizeMarketStructure(
       relevantCandidates: relevantCandidates(input.candidates, input.topic)
         .length,
       credibleIncumbents: count,
+      countIsCensored: censored,
       threshold: CREDIBLE_MIN_WEEKLY_DOWNLOADS,
       names: incumbents.map((c) => c.pkg.name),
     },
@@ -229,10 +270,10 @@ export function normalizeMarketStructure(
     });
 
     // 3. Adoption concentration — is the category already owned?
-    // Meaningless below two incumbents: "100% leader share" of a single package
-    // is arithmetic, not evidence, and would read as an entrenched monopoly
-    // where the real finding is that the category is empty.
-    if (count >= 2) {
+    // Below MIN_INCUMBENTS_FOR_CONCENTRATION a dominant share is arithmetic
+    // rather than evidence, and reads as an entrenched monopoly where the real
+    // finding is that the field is open.
+    if (count >= MIN_INCUMBENTS_FOR_CONCENTRATION) {
       const downloads = incumbents.map((c) => c.weeklyDownloads ?? 0);
       const total = downloads.reduce((a, b) => a + b, 0);
       const leader = Math.max(...downloads);

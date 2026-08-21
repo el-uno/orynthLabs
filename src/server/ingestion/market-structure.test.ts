@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CREDIBLE_MIN_WEEKLY_DOWNLOADS,
   credibleIncumbents,
+
   normalizeMarketStructure,
   relevantCandidates,
   termCoverage,
@@ -79,8 +80,8 @@ describe("credibleIncumbents", () => {
 });
 
 describe("normalizeMarketStructure — sign convention", () => {
-  function run(candidates: Candidate[], topic = "agent treasury") {
-    return normalizeMarketStructure({ topic, candidates, now: NOW });
+  function run(candidates: Candidate[], topic = "agent treasury", lookupsCapped = false) {
+    return normalizeMarketStructure({ topic, candidates, now: NOW, lookupsCapped });
   }
 
   // In every other family more activity is better. Here, an absence of
@@ -130,21 +131,35 @@ describe("normalizeMarketStructure — sign convention", () => {
   it("treats a dominant incumbent as a barrier", () => {
     const dominated = [
       candidate("agent-treasury-big", 100_000, "agent treasury"),
-      candidate("agent-treasury-small", 1000, "agent treasury")
+      candidate("agent-treasury-a", 1000, "agent treasury"),
+      candidate("agent-treasury-b", 1000, "agent treasury"),
+      candidate("agent-treasury-c", 1000, "agent treasury")
     ];
     const concentration = run(dominated).find((s) => s.title === "Adoption concentration")!;
     expect(concentration.scoreDelta).toBeLessThan(0);
   });
 
-  // "100% leader share" of a single package is arithmetic, not evidence, and
-  // would read as an entrenched monopoly where the finding is an empty field.
-  it("omits concentration entirely below two incumbents", () => {
-    const single = run([candidate("agent-treasury-only", 5000, "agent treasury")]);
-    expect(single.find((s) => s.title === "Adoption concentration")).toBeUndefined();
-    expect(single.map((s) => s.title)).toEqual([
-      "Existing solution coverage",
-      "Incumbent staleness"
-    ]);
+  // Calibration across 16 live topics: at two incumbents one almost always
+  // holds >70% of downloads, so the "category has an owner" penalty fired on
+  // genuinely sparse markets. `mcp server framework` has two incumbents — an
+  // open field — and scored a net NEGATIVE gap because of it.
+  it("omits concentration below the incumbent floor", () => {
+    for (const n of [1, 2, 3]) {
+      const few = Array.from({ length: n }, (_, i) =>
+        candidate(`agent-treasury-${i}`, 5000, "agent treasury")
+      );
+      expect(run(few).find((s) => s.title === "Adoption concentration")).toBeUndefined();
+    }
+  });
+
+  it("does not let concentration turn a sparse market negative", () => {
+    // Two incumbents, one dominant: the coverage bonus must survive.
+    const sparse = [
+      candidate("mcp-server-framework", 90_000, "mcp server framework"),
+      candidate("mcp-server-lite", 800, "mcp server framework")
+    ];
+    const net = run(sparse, "mcp server framework").reduce((t, s) => t + s.scoreDelta, 0);
+    expect(net).toBeGreaterThan(0);
   });
 
   it("gives signals a topic- and day-scoped external id", () => {
@@ -161,5 +176,61 @@ describe("normalizeMarketStructure — sign convention", () => {
     ]);
     expect(at[0].value).toBe("1 incumbent");
     expect(below[0].value).toBe("0 incumbents");
+  });
+});
+
+describe("relevance scales with topic length", () => {
+  // A flat 50% let a four-word topic qualify on two words:
+  // `multi agent treasury coordination` returned six "incumbents" that were
+  // generic agent and coordination packages.
+  it("rejects a four-word topic matched on only two words", () => {
+    const generic = [candidate("agent-coordination-kit", 9000, "coordination for agents")];
+    expect(relevantCandidates(generic, "multi agent treasury coordination")).toHaveLength(0);
+  });
+
+  it("still accepts a package that genuinely covers the topic", () => {
+    const real = [
+      candidate("treasury-coord", 9000, "multi agent treasury coordination toolkit")
+    ];
+    expect(relevantCandidates(real, "multi agent treasury coordination")).toHaveLength(1);
+  });
+
+  it("stays lenient for short topics", () => {
+    const short = [candidate("job-queue-x", 9000, "a queue")];
+    expect(relevantCandidates(short, "job queue")).toHaveLength(1);
+  });
+});
+
+describe("censored incumbent counts", () => {
+  const one = (n: number) =>
+    Array.from({ length: n }, (_, i) => candidate(`agent-treasury-${i}`, 5000, "agent treasury"));
+
+  // MAX_DOWNLOAD_LOOKUPS caps how many candidates are ever measured, so busy
+  // markets peg at the cap. Reporting that as an exact total made saturated
+  // and mid-tier markets indistinguishable (10.8 vs 10.3 mean across 16 topics).
+  it("reports a capped count as a floor, not a total", () => {
+    const many = Array.from({ length: 12 }, (_, i) =>
+      candidate(`agent-treasury-${i}`, 5000, "agent treasury")
+    );
+    const coverage = normalizeMarketStructure({
+      topic: "agent treasury",
+      candidates: many,
+      lookupsCapped: true,
+      now: NOW
+    })[0];
+
+    expect(coverage.value).toBe("12+ incumbents");
+    expect(coverage.detail).toContain("at least");
+    expect((coverage.raw as { countIsCensored: boolean }).countIsCensored).toBe(true);
+  });
+
+  it("reports an uncapped count exactly", () => {
+    const coverage = normalizeMarketStructure({
+      topic: "agent treasury",
+      candidates: one(1),
+      now: NOW
+    })[0];
+    expect(coverage.value).toBe("1 incumbent");
+    expect((coverage.raw as { countIsCensored: boolean }).countIsCensored).toBe(false);
   });
 });

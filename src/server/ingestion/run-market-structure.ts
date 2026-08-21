@@ -35,7 +35,10 @@ export async function ingestMarketStructure(input: {
   const packages = await searchNpmPackages(input.topic, input.poolSize ?? CANDIDATE_POOL);
 
   const pool: Candidate[] = packages.map((pkg) => ({ pkg, weeklyDownloads: null }));
-  const relevant = relevantCandidates(pool, input.topic).slice(0, MAX_DOWNLOAD_LOOKUPS);
+  const allRelevant = relevantCandidates(pool, input.topic);
+  const relevant = allRelevant.slice(0, MAX_DOWNLOAD_LOOKUPS);
+  // Beyond the cap the incumbent count becomes a floor rather than a total.
+  const lookupsCapped = allRelevant.length > MAX_DOWNLOAD_LOOKUPS;
 
   // Download figures come one package at a time; the bulk endpoint cannot
   // handle scoped names, which are common exactly where new infrastructure is.
@@ -53,6 +56,7 @@ export async function ingestMarketStructure(input: {
     // how wide the search was before relevance narrowed it.
     candidates: measured,
     examined: packages.length,
+    lookupsCapped,
     now: input.now ?? new Date()
   });
 }

@@ -199,13 +199,43 @@ Atlas moved from its seeded 92 to a derived 65.
 
 ---
 
+### Market-structure calibration ✅ *done 2026-08-19*
+Swept 16 live topics across an expected spectrum. The coverage measure
+discriminates where it matters — saturated markets averaged 10.8 incumbents
+against 1.8 for niche — but three faults showed up:
+
+- **Concentration punished sparse markets.** At two incumbents one almost
+  always holds >70% of downloads, so the "category has an owner" penalty fired
+  on open fields. `mcp server framework` had two incumbents and a net *negative*
+  gap. Floor raised to 4; that topic now reads +4.
+- **The count was censored but presented as exact.** `MAX_DOWNLOAD_LOOKUPS`
+  caps candidates examined, so busy markets peg at the cap — saturated and
+  mid-tier were indistinguishable (10.8 vs 10.3). Capped counts now report as
+  `12+ incumbents`, "at least N".
+- **Relevance leaked on long topics.** A flat 50% let a four-word topic qualify
+  on two words; `multi agent treasury coordination` returned six generic
+  "incumbents". Required overlap now scales with topic length, and that topic
+  now returns two.
+
+**Deliberately not tuned:** `STRONG_MIN_SCORE` and `MIN_DEMAND_FAMILIES`. Every
+topic returned `crowded` or `insufficient_evidence` — not because the gates are
+wrong but because opportunities carry only market-structure evidence, so the
+paths those constants govern are unreachable. Tuning them now would be fitting
+to a path nothing can take. Topic-scoped demand ingestion is the prerequisite.
+
+**Operational constraint:** npm's download API rate-limited after roughly three
+topics and needed ~90 seconds to clear, capping a sweep near 20 topics/hour.
+Topic discovery will need queueing and pacing, not a burst.
+
+---
+
 ## Gates — not phases, but blocking
 
 | Gate | Before |
 | --- | --- |
 | **App-level auth** | Any hosting. API routes are token-guarded; the dashboard pages are fully public |
 | **`GITHUB_TOKEN` in the worker env** | Enabling the scheduler on a real list. 60 req/hour unauthenticated, 3 per ingestion |
-| **Threshold calibration** | Trusting any recommendation. Constants were set against one seeded row and a handful of real repositories |
+| **Threshold calibration** | *Market-structure constants calibrated 2026-08-19 against 16 live topics (see Correctness fixes). Readiness and opportunity thresholds remain uncalibrated* |
 | **`OPENAI_API_KEY`** | Expecting useful rationales or semantic dedup. Scores and statuses are deterministic and unaffected, but rationales are placeholder text and embeddings are null |
 
 ---
