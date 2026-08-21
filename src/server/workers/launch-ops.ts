@@ -22,7 +22,7 @@ import { ingestMarketStructure } from "@/server/ingestion/run-market-structure";
 import { ingestConsumerActivity } from "@/server/ingestion/run-consumer";
 import { ingestGitHubActivity } from "@/server/ingestion/run-github";
 import { buildLaunchSnapshot } from "@/server/workflows/launch-workflow";
-import { launches as fallbackLaunches, signals as fallbackSignals } from "@/lib/mock-data";
+import { launches as fallbackLaunches } from "@/lib/mock-data";
 import { currentAttempt, isFinalAttempt } from "./job-attempts";
 import type { Launch } from "@/lib/types";
 
@@ -41,7 +41,7 @@ export type LaunchJobResult = {
   ok: boolean;
   launchId?: string;
   snapshotId?: string | null;
-  score?: number;
+  score?: number | null;
   status?: string;
   signalsIngested?: number;
   fannedOut?: number;
@@ -138,9 +138,11 @@ export function startLaunchOpsWorker() {
     try {
       if (job.name === "score-launch") {
         const launch = await resolveLaunch(job.data.launchId);
-        const storedSignals = await listSignalsForScoring(50);
-        const signals =
-          storedSignals && storedSignals.length > 0 ? storedSignals : fallbackSignals;
+        // No mock fallback here. Demo fixtures are fine for rendering an empty
+        // dashboard, but scoring an entity on somebody else's fixture data
+        // fabricates an assessment: two entities with no signals of their own
+        // were being scored 70 from mock evidence.
+        const signals = (await listSignalsForScoring(launch.id, 50)) ?? [];
 
         const result = await scoreLaunch({ launch, signals });
 
@@ -149,10 +151,13 @@ export function startLaunchOpsWorker() {
           name: launch.name,
           symbol: launch.symbol,
           status: result.status,
-          score: Math.round(result.score),
+          score: result.score === null ? null : Math.round(result.score),
           rationale: result.rationale,
-          recommendation: result.assessment.recommendation,
-          readiness: result.assessment.readiness
+          // A tokenization recommendation is meaningless for a gap nobody has
+          // built into yet, and a readiness axis is meaningless without a product.
+          recommendation: result.opportunity ? null : result.assessment.recommendation,
+          opportunityVerdict: result.opportunity?.verdict ?? null,
+          readiness: result.opportunity ? undefined : result.assessment.readiness
         });
 
         // Scoring output goes to the snapshot that produced it. It is NOT
@@ -166,7 +171,8 @@ export function startLaunchOpsWorker() {
           payload: {
             scoring: result,
             statusDecision: result.statusDecision,
-            assessment: result.assessment
+            assessment: result.assessment,
+            opportunity: result.opportunity
           },
           score: result.score,
           status: result.status
@@ -360,7 +366,10 @@ export function startLaunchOpsWorker() {
       }
 
       if (job.name === "sweep-scoring") {
-        const fannedOut = await fanOut("score-launch", listLaunchesWithGitHubRepo, (launch) => ({
+        // Every tracked entity, not only those with a repository. Opportunities
+        // have no codebase, so keying this on GitHub meant they were ingested
+        // but never assessed.
+        const fannedOut = await fanOut("score-launch", listLaunches, (launch) => ({
           launchId: launch.id
         }));
 

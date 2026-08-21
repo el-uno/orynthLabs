@@ -136,16 +136,28 @@ export async function insertObservedSignals(
  * Separate from `listSignals` because 1536 floats per row is an unacceptable
  * payload for a page render but fine for a background scoring job.
  */
-export async function listSignalsForScoring(limit = 50): Promise<Signal[] | null> {
+export async function listSignalsForScoring(
+  projectId: string | null,
+  limit = 50
+): Promise<Signal[] | null> {
   if (!supabaseAdmin) {
     return null;
   }
 
-  const { data, error } = await supabaseAdmin
+  // Scoped to the entity. Reading the table globally meant every entity was
+  // assessed on everyone else's evidence: three companies with different
+  // repositories scored identically, and an opportunity with only
+  // market-structure signals borrowed another entity's demand to claim an
+  // intersection that had not been observed for it.
+  let query = supabaseAdmin
     .from("signal_events")
     .select(`${SIGNAL_COLUMNS}, embedding`)
     .order("created_at", { ascending: false })
     .limit(limit);
+
+  query = projectId === null ? query.is("project_id", null) : query.eq("project_id", projectId);
+
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(`Failed to list signals for scoring: ${error.message}`);

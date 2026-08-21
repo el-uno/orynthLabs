@@ -113,6 +113,18 @@ export type Readiness = Record<ReadinessDimension, number | null>;
  * product's economy, not replace it, so "good product, no token" must be
  * expressible. The previous model had no way to say it.
  */
+/**
+ * The verdict on a Build Opportunity.
+ *
+ * Separate vocabulary from `LaunchRecommendation` on purpose: "launch now"
+ * means nothing for a gap nobody has built into yet.
+ */
+export type OpportunityVerdict =
+  | "strong"
+  | "emerging"
+  | "crowded"
+  | "insufficient_evidence";
+
 export type LaunchRecommendation =
   | "launch_now"
   | "build_further"
@@ -133,11 +145,20 @@ export type Launch = {
   entityKind: EntityKind;
   symbol: string | null;
   status: LaunchStatus;
-  score: number;
+  /**
+   * The readiness composite, derived from observed signals.
+   *
+   * Null when no axis is measurable. Null is not zero, for the same reason it
+   * is not zero on the axes themselves: "not assessed" and "assessed and poor"
+   * are different claims.
+   */
+  score: number | null;
   chain: string | null;
   /** The problem space this entity competes in; drives market-structure evidence. */
   marketTopic: string | null;
   recommendation: LaunchRecommendation | null;
+  /** Set for opportunities; null for companies. */
+  opportunityVerdict: OpportunityVerdict | null;
   readiness: Readiness;
   updatedAt: string;
 };

@@ -27,10 +27,16 @@ function buildMetrics(launches: LaunchWithTrend[], signals: Signal[]): MetricCar
     moved.length > 0
       ? moved.reduce((total, launch) => total + (launch.trend?.delta ?? 0), 0)
       : null;
+  // Average only the entities that actually have a composite. Treating an
+  // unassessed entity as 0 would drag the average toward "bad" when the truth
+  // is "not yet measured".
+  const scored = launches.filter(
+    (launch): launch is typeof launch & { score: number } => launch.score !== null
+  );
   const averageScore =
-    launches.length > 0
-      ? Math.round(launches.reduce((total, launch) => total + launch.score, 0) / launches.length)
-      : 0;
+    scored.length > 0
+      ? Math.round(scored.reduce((total, launch) => total + launch.score, 0) / scored.length)
+      : null;
 
   return [
     { label: "Launches tracked", value: String(launches.length), delta: "live from database" },
@@ -43,7 +49,12 @@ function buildMetrics(launches: LaunchWithTrend[], signals: Signal[]): MetricCar
     {
       label: "Ready-for-launch",
       value: String(ready),
-      delta: movement === null ? `avg score ${averageScore}` : `net ${movement > 0 ? "+" : ""}${movement} across scored launches`
+      delta:
+        movement !== null
+          ? `net ${movement > 0 ? "+" : ""}${movement} across scored entities`
+          : averageScore === null
+            ? "none assessed yet"
+            : `avg score ${averageScore}`
     }
   ];
 }

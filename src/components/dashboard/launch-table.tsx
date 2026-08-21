@@ -76,7 +76,9 @@ export function LaunchTable({ launches }: { launches: LaunchWithTrend[] }) {
                     {launch.status}
                   </span>
                 </td>
-                <td className="px-4 py-4 text-slate-200 tabular-nums">{launch.score}</td>
+                <td className="px-4 py-4 text-slate-200 tabular-nums">
+                  {launch.score ?? <span className="text-slate-500">—</span>}
+                </td>
                 <td className="px-4 py-4">
                   <ScoreTrendCell trend={launch.trend} />
                 </td>

@@ -4,6 +4,7 @@ import { launchScoreSchema } from "@/lib/schema";
 import { dedupeByMetric } from "@/server/scoring/dedupe";
 import { dedupeBySimilarity } from "@/server/scoring/similarity";
 import { assess, type ReadinessAssessment } from "@/server/scoring/readiness";
+import { assessOpportunity, type OpportunityAssessment } from "@/server/scoring/opportunity";
 import { resolveStatus, type StatusDecision } from "@/server/scoring/thresholds";
 import type { Launch, Signal } from "@/lib/types";
 
@@ -18,17 +19,34 @@ export type ScoreLaunchInput = {
   now?: Date;
 };
 
-export type ScoredLaunch = ReturnType<typeof launchScoreSchema.parse> & {
+export type ScoredLaunch = Omit<ReturnType<typeof launchScoreSchema.parse>, "score"> & {
+  /** The readiness composite. Null when no axis is measurable. */
+  score: number | null;
   /** Why the status is what it is. Persisted so the decision stays arguable. */
   statusDecision: StatusDecision;
-  /** Six-axis readiness and the tokenization recommendation. */
+  /** Six-axis readiness and the tokenization recommendation. Companies only. */
   assessment: ReadinessAssessment;
+  /**
+   * Opportunity verdict. Set only for `entity_kind: "opportunity"`, where the
+   * readiness axes do not apply — there is no product or founder to score.
+   */
+  opportunity: OpportunityAssessment | null;
 };
 
 /**
  * Status is decided by the deterministic threshold layer, never by the model.
  * The model contributes a score and an explanation; sufficiency of evidence is
  * not a judgement it is equipped to make.
+ */
+/**
+ * Status AND score are both decided by deterministic layers, never by the
+ * model or by the stored row.
+ *
+ * The model contributes an explanation only. Its `score` field is parsed for
+ * schema conformance and then discarded: a reproducible assessment cannot
+ * depend on a generative sample, and the fallback path used to echo
+ * `launch.score` straight back — so the row gated its own status and was then
+ * overwritten with itself.
  */
 function applyThresholds(
   parsed: ReturnType<typeof launchScoreSchema.parse>,
@@ -38,22 +56,36 @@ function applyThresholds(
   // similarity collapses two sources reporting the same real-world event.
   const deduped = dedupeBySimilarity(dedupeByMetric(input.signals));
 
+  const assessment = assess(deduped);
+  const isOpportunity = input.launch.entityKind === "opportunity";
+
+  // An opportunity is judged on whether a gap exists, not on readiness axes it
+  // cannot have. Both paths derive their score the same way: from evidence.
+  const opportunity = isOpportunity ? assessOpportunity(deduped) : null;
+  const score = isOpportunity ? (opportunity?.score ?? null) : assessment.composite;
+
   const decision = resolveStatus({
-    score: parsed.score,
+    score,
     signals: deduped,
     currentStatus: input.launch.status,
     now: input.now
   });
 
-  const assessment = assess(deduped);
-
-  return { ...parsed, status: decision.status, statusDecision: decision, assessment };
+  return {
+    ...parsed,
+    score,
+    status: decision.status,
+    statusDecision: decision,
+    assessment,
+    opportunity
+  };
 }
 
 export async function scoreLaunch(input: ScoreLaunchInput): Promise<ScoredLaunch> {
   if (!client) {
     const fallback = launchScoreSchema.parse({
-      score: input.launch.score,
+      // Placeholder only; applyThresholds replaces it with the composite.
+      score: 0,
       status: input.launch.status,
       rationale: "OpenAI key not configured; returning deterministic fallback score.",
       signals: input.signals.map((signal) => ({

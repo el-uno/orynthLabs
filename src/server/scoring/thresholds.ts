@@ -92,7 +92,8 @@ export function summarizeEvidence(signals: Signal[], now: Date): Evidence {
  * already launched, it stays launched.
  */
 export function resolveStatus(input: {
-  score: number;
+  /** The readiness composite. Null when no axis is measurable. */
+  score: number | null;
   signals: Signal[];
   currentStatus?: LaunchStatus;
   now?: Date;
@@ -117,14 +118,29 @@ export function resolveStatus(input: {
     };
   }
 
+  // No composite means no measurable axis. Readiness cannot be claimed on
+  // evidence that does not exist, so this stops short of `watching` rather
+  // than treating an absent score as a low one.
+  if (input.score === null) {
+    return {
+      status: "draft",
+      evidence,
+      reasons: [
+        `no readiness composite: ${evidence.signalCount} signal(s) but no measurable axis`
+      ]
+    };
+  }
+
+  const score = input.score;
+
   const isRecent =
     evidence.mostRecentAgeDays !== null &&
     evidence.mostRecentAgeDays <= READY_MAX_SIGNAL_AGE_DAYS;
 
   const readyChecks: { pass: boolean; detail: string }[] = [
     {
-      pass: input.score >= READY_MIN_SCORE,
-      detail: `score ${Math.round(input.score)} vs ${READY_MIN_SCORE} required`
+      pass: score >= READY_MIN_SCORE,
+      detail: `score ${Math.round(score)} vs ${READY_MIN_SCORE} required`
     },
     {
       pass: evidence.signalCount >= READY_MIN_SIGNALS,
@@ -166,15 +182,15 @@ export function resolveStatus(input: {
 
   reasons.push(...failed.map((check) => `not ready — ${check.detail}`));
 
-  if (input.score >= WATCHING_MIN_SCORE || evidence.signalCount >= WATCHING_MIN_SIGNALS) {
+  if (score >= WATCHING_MIN_SCORE || evidence.signalCount >= WATCHING_MIN_SIGNALS) {
     reasons.push(
-      `watching: score ${Math.round(input.score)} >= ${WATCHING_MIN_SCORE} or ${evidence.signalCount} >= ${WATCHING_MIN_SIGNALS} signals`
+      `watching: score ${Math.round(score)} >= ${WATCHING_MIN_SCORE} or ${evidence.signalCount} >= ${WATCHING_MIN_SIGNALS} signals`
     );
     return { status: "watching", evidence, reasons };
   }
 
   reasons.push(
-    `draft: score ${Math.round(input.score)} below ${WATCHING_MIN_SCORE} and only ${evidence.signalCount} signal(s)`
+    `draft: score ${Math.round(score)} below ${WATCHING_MIN_SCORE} and only ${evidence.signalCount} signal(s)`
   );
   return { status: "draft", evidence, reasons };
 }

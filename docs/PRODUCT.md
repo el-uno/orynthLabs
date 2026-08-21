@@ -119,19 +119,28 @@ model must always be able to say no. Enforced by `LaunchRecommendation`.
 | Entities are `opportunity` **or** `company` | A Build Opportunity has no company behind it yet |
 | `slug` is identity; `symbol` and `chain` are nullable | Most tracked products have no token, and some correctly never will. `symbol` was once `NOT NULL` and the upsert key, which made the primary input unstorable |
 | Readiness is six axes, not one score | One number cannot say *which* axis holds a company back |
+| The model never sets a number | It contributes the explanation; scores and statuses come from deterministic layers, because a reproducible assessment cannot depend on a generative sample |
+| The top-line score IS the readiness composite | It used to be echoed from the row it was written back to, so a seeded number gated its own status. Derived from evidence, or absent |
 | An unmeasured axis is `null`, never `0` | "We have not researched this" and "this is bad" are different claims |
 | Signals carry a signed `scoreDelta` | Severity says how *notable* a signal is, not whether it is good. An archived repo and a commit surge are both "high" |
 | No signing keys live here | Launches are Orynth's to execute; holding authority we never use is pure liability |
 | Scoring output never re-enters `signal_events` | It fed scoring its own output; the table doubled every run |
 | In `market_structure`, the sign inverts | An *absence* of maintained solutions is the positive finding — it is the "existing solution coverage: low" claim every Build Opportunity rests on |
 | `consumer` does NOT invert its sign, though `market_structure` does | One measures competitors, where absence is good news; the other measures the entity's own users, where being ignored is simply bad |
+| An opportunity is the same shape as a company | Giving it a `market_topic` means existing ingestion gathers evidence against it with no new plumbing; only the verdict it earns differs |
+| Opportunities get a verdict, companies get a recommendation | "Launch now" is meaningless for a gap nobody has built into; readiness axes are meaningless without a product |
+| An opportunity requires an observed gap AND demand across 2+ families | High activity in a well-served market is a crowded market, not an opportunity. Not having looked for a gap is not the same as having found one |
+| Scoring reads only the entity's own signals | Reading globally made three companies score identically and let an opportunity borrow another entity's demand |
+| Scoring never falls back to mock fixtures | Fixtures are fine for rendering an empty dashboard; scoring on them fabricates an assessment |
 | Entities carry a `market_topic` | A company's market is not its codebase, and an opportunity has no codebase at all |
 
 ---
 
 ## Not yet built
 
-- The Idea Marketplace itself — nothing currently *generates* Build Opportunities
+- Automatic topic discovery. Opportunities are registered via
+  `POST /api/opportunities` and then assessed; nothing yet *proposes* candidate
+  topics on its own
 - Company Graph ingestion (stage 2)
 - The Economic Design Studio, so `economicDesign` always scores `null`
 - Ingestion for the `attention` family — blocked on X API credits, not on a

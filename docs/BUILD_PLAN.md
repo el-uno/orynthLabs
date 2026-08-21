@@ -98,10 +98,23 @@ unblocks nothing.
 
 *Depends on Phase A. Without it the loop has no beginning and no moat.*
 
-### B1. Opportunity synthesis
-Detect intersections across families and emit `entity_kind: "opportunity"`
-rows. The schema already holds them; nothing creates them. The existing
-threshold layer's family-corroboration logic is the right primitive to build on.
+### B1. Opportunity synthesis ✅ *shipped 2026-08-19*
+An opportunity is registered as an entity with a `market_topic`
+(`POST /api/opportunities`), so the existing ingestion sweep gathers evidence
+against it with no new plumbing, and the same scoring job assesses it.
+`scoring/opportunity.ts` requires **an observed gap AND demand across two or
+more families** before calling anything an opportunity; `GET /api/opportunities`
+is the Marketplace read. Migration 0010 adds the verdict.
+
+Three pre-existing bugs surfaced while verifying it:
+- `sweep-scoring` fanned out over repositories only, so opportunities were
+  ingested but never assessed
+- scoring read `signal_events` globally, so three companies scored identically
+  and an opportunity borrowed another entity's demand to claim an intersection
+- entities with no signals were scored on **mock fixtures**, fabricating a 70
+
+*Remaining:* nothing proposes candidate topics yet — they are registered by
+hand. Topic discovery is the next step toward a self-feeding Marketplace.
 
 ### B2. Opportunity scoring and presentation
 Opportunity score, "why now", signals behind it, observed gap, possible
@@ -166,13 +179,34 @@ composite.
 
 ---
 
+## Correctness fixes
+
+### Derived score ✅ *done 2026-08-19*
+The top-line score was circular. With no model configured, scoring read
+`launch_projects.score` off the row, used it to gate the status
+(`score >= 75` => ready), then wrote the same number back — so a seeded 92
+made an entity "ready" with no evidence behind it. Structurally the same fault
+as scoring consuming its own output from `signal_events`, travelling through a
+different column.
+
+The score is now the readiness composite. The model contributes the rationale
+only; its `score` field is parsed for conformance and discarded. Where no axis
+is measurable there is no score, so the column is nullable (migration 0009) —
+`0` would read as "assessed and poor" rather than "not assessed".
+
+Verified: a stored score of 100 and of 1 now produce identical output, and
+Atlas moved from its seeded 92 to a derived 65.
+
+---
+
 ## Gates — not phases, but blocking
 
 | Gate | Before |
 | --- | --- |
 | **App-level auth** | Any hosting. API routes are token-guarded; the dashboard pages are fully public |
 | **`GITHUB_TOKEN` in the worker env** | Enabling the scheduler on a real list. 60 req/hour unauthenticated, 3 per ingestion |
-| **Threshold calibration** | Trusting any recommendation. Constants were set against one seeded row and one real repo |
+| **Threshold calibration** | Trusting any recommendation. Constants were set against one seeded row and a handful of real repositories |
+| **`OPENAI_API_KEY`** | Expecting useful rationales or semantic dedup. Scores and statuses are deterministic and unaffected, but rationales are placeholder text and embeddings are null |
 
 ---
 

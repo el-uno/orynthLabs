@@ -180,3 +180,24 @@ describe("substantive evidence gate", () => {
     expect(e.substantiveCount).toBe(0);
   });
 });
+
+describe("absent score", () => {
+  // A null composite means no axis was measurable. Readiness cannot be claimed
+  // on evidence that does not exist, so this stops short of `watching` rather
+  // than treating an absent score as a low one.
+  it("cannot reach watching or ready without a composite", () => {
+    const d = resolveStatus({ score: null, signals: strongEvidence(), now: NOW });
+    expect(d.status).toBe("draft");
+    expect(d.reasons[0]).toContain("no readiness composite");
+  });
+
+  it("still preserves a launched status", () => {
+    const d = resolveStatus({
+      score: null,
+      signals: [],
+      currentStatus: "launched",
+      now: NOW
+    });
+    expect(d.status).toBe("launched");
+  });
+});

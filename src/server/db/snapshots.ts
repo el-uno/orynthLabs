@@ -5,7 +5,7 @@ export async function insertLaunchSnapshot(input: {
   projectId: string | null;
   source: string;
   payload: unknown;
-  score: number;
+  score: number | null;
   status: LaunchStatus;
 }): Promise<string | null> {
   if (!supabaseAdmin) {
@@ -18,7 +18,7 @@ export async function insertLaunchSnapshot(input: {
       project_id: input.projectId,
       source: input.source,
       payload: input.payload,
-      score: Math.round(input.score),
+      score: input.score === null ? null : Math.round(input.score),
       status: input.status
     })
     .select("id")

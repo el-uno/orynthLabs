@@ -6,6 +6,7 @@ import type {
   Launch,
   LaunchRecommendation,
   LaunchStatus,
+  OpportunityVerdict,
   Readiness
 } from "@/lib/types";
 
@@ -18,9 +19,10 @@ type LaunchRow = {
   chain: string | null;
   market_topic: string | null;
   recommendation: string | null;
+  opportunity_verdict: string | null;
   readiness: Record<string, unknown> | null;
   status: string;
-  score: number;
+  score: number | null;
   github_owner: string | null;
   github_repo: string | null;
   partner_ref: string | null;
@@ -28,7 +30,8 @@ type LaunchRow = {
 };
 
 const LAUNCH_COLUMNS =
-  "id, slug, name, entity_kind, symbol, chain, status, score, market_topic, recommendation, readiness, " +
+  "id, slug, name, entity_kind, symbol, chain, status, score, market_topic, recommendation, " +
+  "opportunity_verdict, readiness, " +
   "github_owner, github_repo, partner_ref, updated_at";
 
 function toStatus(value: string): LaunchStatus {
@@ -58,6 +61,7 @@ function toLaunch(row: LaunchRow): Launch {
     chain: row.chain,
     marketTopic: row.market_topic,
     recommendation: (row.recommendation as LaunchRecommendation | null) ?? null,
+    opportunityVerdict: (row.opportunity_verdict as OpportunityVerdict | null) ?? null,
     readiness: toReadiness(row.readiness),
     updatedAt: row.updated_at
   };
@@ -75,7 +79,7 @@ export async function listLaunches(limit = 50): Promise<Launch[] | null> {
   const { data, error } = await supabaseAdmin
     .from("launch_projects")
     .select(LAUNCH_COLUMNS)
-    .order("score", { ascending: false })
+    .order("score", { ascending: false, nullsFirst: false })
     .limit(limit);
 
   if (error) {
@@ -137,9 +141,11 @@ export async function upsertLaunchScore(input: {
   name: string;
   symbol?: string | null;
   status: LaunchStatus;
-  score: number;
+  /** The readiness composite; null when no axis is measurable. */
+  score: number | null;
   rationale: string;
   recommendation?: LaunchRecommendation | null;
+  opportunityVerdict?: OpportunityVerdict | null;
   readiness?: Readiness;
 }): Promise<Launch | null> {
   if (!supabaseAdmin) {
@@ -156,6 +162,7 @@ export async function upsertLaunchScore(input: {
         status: input.status,
         score: input.score,
         recommendation: input.recommendation ?? null,
+        opportunity_verdict: input.opportunityVerdict ?? null,
         ...(input.readiness ? { readiness: input.readiness } : {}),
         metadata: { rationale: input.rationale }
       },
@@ -194,7 +201,7 @@ export async function listLaunchesWithGitHubRepo(
     .select("id, slug, github_owner, github_repo")
     .not("github_owner", "is", null)
     .not("github_repo", "is", null)
-    .order("score", { ascending: false })
+    .order("score", { ascending: false, nullsFirst: false })
     .limit(limit);
 
   if (error) {
@@ -242,7 +249,7 @@ export async function listLaunchesWithTokenMint(
     .from("launch_projects")
     .select("id, slug, token_mint")
     .not("token_mint", "is", null)
-    .order("score", { ascending: false })
+    .order("score", { ascending: false, nullsFirst: false })
     .limit(limit);
 
   if (error) {
@@ -274,7 +281,7 @@ export async function listLaunchesWithMarketTopic(
     .from("launch_projects")
     .select("id, slug, market_topic")
     .not("market_topic", "is", null)
-    .order("score", { ascending: false })
+    .order("score", { ascending: false, nullsFirst: false })
     .limit(limit);
 
   if (error) {
@@ -304,4 +311,65 @@ export async function findLaunchByMarketTopic(topic: string): Promise<Launch | n
   }
 
   return data ? toLaunch(data as unknown as LaunchRow) : null;
+}
+
+/**
+ * Registers a candidate market gap as an opportunity entity.
+ *
+ * An opportunity is deliberately the same shape as a company: giving it a
+ * `market_topic` means the existing ingestion sweep gathers evidence against
+ * it with no new plumbing, and the same scoring job assesses it. What differs
+ * is the verdict it earns, not the machinery.
+ */
+export async function createOpportunity(input: {
+  slug: string;
+  name: string;
+  marketTopic: string;
+}): Promise<Launch | null> {
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("launch_projects")
+    .upsert(
+      {
+        slug: input.slug,
+        name: input.name,
+        entity_kind: "opportunity",
+        market_topic: input.marketTopic,
+        status: "draft",
+        // No score until evidence produces one.
+        score: null
+      },
+      { onConflict: "slug" }
+    )
+    .select(LAUNCH_COLUMNS)
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create opportunity ${input.slug}: ${error.message}`);
+  }
+
+  return toLaunch(data as unknown as LaunchRow);
+}
+
+/** Opportunities, strongest first. The Idea Marketplace reads this. */
+export async function listOpportunities(limit = 50): Promise<Launch[] | null> {
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("launch_projects")
+    .select(LAUNCH_COLUMNS)
+    .eq("entity_kind", "opportunity")
+    .order("score", { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Failed to list opportunities: ${error.message}`);
+  }
+
+  return (data as unknown as LaunchRow[]).map(toLaunch);
 }

@@ -4,7 +4,7 @@ import { scoreLaunch } from "@/server/ai/scoring";
 import { findLaunchByRepo, listLaunches, upsertLaunchScore } from "@/server/db/launches";
 import { listSignalsForScoring } from "@/server/db/signals";
 import { insertLaunchSnapshot } from "@/server/db/snapshots";
-import { launches as fallbackLaunches, signals as fallbackSignals } from "@/lib/mock-data";
+import { launches as fallbackLaunches } from "@/lib/mock-data";
 import type { Launch } from "@/lib/types";
 
 export type LaunchSnapshotInput = {
@@ -34,8 +34,8 @@ export async function buildLaunchSnapshot(input: LaunchSnapshotInput) {
   ]);
 
   const launch = await resolveLaunch(input.owner, input.repo);
-  const storedSignals = await listSignalsForScoring(50);
-  const signals = storedSignals && storedSignals.length > 0 ? storedSignals : fallbackSignals;
+  // Never score on fixtures — see launch-ops.
+  const signals = (await listSignalsForScoring(launch.id, 50)) ?? [];
 
   const scoring = await scoreLaunch({ launch, signals });
 
@@ -44,10 +44,11 @@ export async function buildLaunchSnapshot(input: LaunchSnapshotInput) {
     name: launch.name,
     symbol: launch.symbol,
     status: scoring.status,
-    score: Math.round(scoring.score),
+    score: scoring.score === null ? null : Math.round(scoring.score),
     rationale: scoring.rationale,
-    recommendation: scoring.assessment.recommendation,
-    readiness: scoring.assessment.readiness
+    recommendation: scoring.opportunity ? null : scoring.assessment.recommendation,
+    opportunityVerdict: scoring.opportunity?.verdict ?? null,
+    readiness: scoring.opportunity ? undefined : scoring.assessment.readiness
   });
 
   const projectId = persisted?.id ?? null;
