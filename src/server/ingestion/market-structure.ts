@@ -4,6 +4,15 @@ import type { ObservedSignal, SignalSeverity } from "@/lib/types";
 export const MARKET_SOURCE = "npm";
 
 /**
+ * Title of the signal that answers "do solutions already exist?".
+ *
+ * Exported so the opportunity gate can key on it rather than on the net of
+ * every market-structure signal. Staleness and fragmentation describe how
+ * attractive a gap is; they must not be able to manufacture one.
+ */
+export const COVERAGE_SIGNAL_TITLE = "Existing solution coverage";
+
+/**
  * A package only counts as a competitor if someone actually uses it. Without a
  * floor, a market looks crowded because forty abandoned experiments share a
  * keyword.
@@ -221,7 +230,7 @@ export function normalizeMarketStructure(
     kind: "market",
     family: "market_structure",
     severity: coverageSeverity,
-    title: "Existing solution coverage",
+    title: COVERAGE_SIGNAL_TITLE,
     detail: censored
       ? `at least ${count} maintained package(s) above ${CREDIBLE_MIN_WEEKLY_DOWNLOADS} weekly downloads (adoption lookups capped) — ${coverageNote}`
       : `${count} maintained package(s) above ${CREDIBLE_MIN_WEEKLY_DOWNLOADS} weekly downloads — ${coverageNote}`,

@@ -4,16 +4,17 @@ import {
   assessOpportunity,
   summarizeOpportunityEvidence
 } from "./opportunity";
+import { COVERAGE_SIGNAL_TITLE } from "@/server/ingestion/market-structure";
 import type { Signal, SignalFamily } from "@/lib/types";
 
-function signal(family: SignalFamily, scoreDelta = 8): Signal {
+function signal(family: SignalFamily, scoreDelta = 8, label?: string): Signal {
   return {
     id: Math.random().toString(36).slice(2),
     source: "test",
     externalId: null,
     kind: "github",
     family,
-    label: `${family} signal`,
+    label: label ?? `${family} signal`,
     severity: "high",
     value: "v",
     detail: "d",
@@ -22,9 +23,14 @@ function signal(family: SignalFamily, scoreDelta = 8): Signal {
   };
 }
 
-/** A gap: solutions are scarce, per the market_structure sign convention. */
-const gap = () => signal("market_structure", 10);
-const served = () => signal("market_structure", -8);
+/**
+ * A gap is established by the coverage signal specifically. Staleness and
+ * fragmentation are also market_structure but cannot create scarcity.
+ */
+const gap = () => signal("market_structure", 10, COVERAGE_SIGNAL_TITLE);
+const served = () => signal("market_structure", -8, COVERAGE_SIGNAL_TITLE);
+/** A market_structure signal that is NOT coverage. */
+const staleness = () => signal("market_structure", 8, "Incumbent staleness");
 
 describe("summarizeOpportunityEvidence", () => {
   it("counts a family as demand only when its net contribution is positive", () => {
@@ -149,5 +155,29 @@ describe("regression: evidence must belong to the entity", () => {
     expect(a.verdict).toBe("insufficient_evidence");
     expect(a.score).toBeNull();
     expect(a.evidence.demandFamilies).toEqual([]);
+  });
+});
+
+describe("only coverage can establish a gap", () => {
+  // `react state management` has eight incumbents, so coverage said "well
+  // served" (-4) — but staleness (+4) and fragmentation (+4) outvoted it, the
+  // net went positive, and a saturated market read as an opportunity.
+  it("refuses a gap when coverage is negative, whatever the modifiers say", () => {
+    const a = assessOpportunity([
+      served(),
+      staleness(),
+      staleness(),
+      signal("builder", 8),
+      signal("attention", 8)
+    ]);
+
+    expect(a.verdict).toBe("crowded");
+    expect(a.evidence.gapStrength).toBeGreaterThan(0);
+    expect(a.evidence.coverageStrength).toBeLessThan(0);
+  });
+
+  it("still recognises a gap that coverage supports", () => {
+    const a = assessOpportunity([gap(), signal("builder", 8), signal("attention", 8)]);
+    expect(["strong", "emerging"]).toContain(a.verdict);
   });
 });

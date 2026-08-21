@@ -162,3 +162,25 @@ export async function fetchGitHubIssueCount(
     return null;
   }
 }
+
+export type GitHubRepoSearch = {
+  total_count: number;
+  items: { full_name: string; stargazers_count: number; created_at: string }[];
+};
+
+/**
+ * Repositories matching a topic, created since `sinceDate` (YYYY-MM-DD).
+ *
+ * Topic-scoped rather than repo-scoped: this asks "are developers building in
+ * this space", which is builder-family demand for a market gap, not activity
+ * within one project.
+ *
+ * Search has a tighter budget than the core API (30 requests/minute
+ * authenticated), so callers must pace.
+ */
+export function searchGitHubRepositories(topic: string, sinceDate: string) {
+  const q = `${topic} created:>=${sinceDate}`;
+  return githubGet<GitHubRepoSearch>(
+    `/search/repositories?q=${encodeURIComponent(q)}&sort=stars&order=desc&per_page=5`
+  );
+}

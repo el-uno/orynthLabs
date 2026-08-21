@@ -15,7 +15,7 @@ tell you what to do next.
 
 | Stage | State |
 | --- | --- |
-| 1. Discover | ~35% — ingestion for 4 of 5 families; nothing generates Build Opportunities |
+| 1. Discover | ~55% — all five families ingest; opportunities are assessed but must still be registered by hand |
 | 2. Build | ~5% — schema holds a company; no Company Graph ingestion |
 | 3. Design | ~40% — six-axis readiness and recommendation enforced; no Economic Design Studio |
 | 4. Launch | 0% — no Orynth handoff |
@@ -28,10 +28,10 @@ overrides the model, two-pass dedup, job tracing, and bearer auth on every
 route that costs money. 139 tests, 8 migrations, verified against live GitHub,
 npm, Solana RPC and Supabase.
 
-**The binding constraint:** four families have ingestion; `attention` does not,
-and is blocked on X API credits rather than on code. Two of six readiness axes
-remain unmeasurable — `community`, which only attention can reach, and
-`economicDesign`, which needs the Economic Design Studio (E2).
+**The binding constraint is gone.** All five families ingest, and 5 of 6
+readiness axes are measurable. `economicDesign` is the last, and it needs the
+Economic Design Studio (E2), not more ingestion. The open question is no longer
+coverage but calibration.
 
 ---
 
@@ -54,7 +54,16 @@ effort. Two dependencies drive everything below:
 
 *Unblocks: three readiness axes, and Discover entirely.*
 
-### A1. Attention ingestion — X, then Reddit
+### A1. Attention ingestion ✅ *shipped 2026-08-19 (Stack Overflow)*
+Stack Overflow question volume, free and unauthenticated, delivered as part of
+topic-scoped demand ingestion. `community` moved from `null` to 53, taking
+measurable axes to **5 of 6** — only `economicDesign` remains, and that needs
+E2 rather than ingestion.
+
+X stays blocked on credits and Reddit needs an app registration; either would
+deepen the family, but neither is required for coverage any more.
+
+### A1b. Deeper attention sources — X, Reddit
 *Blocked on X API **credits**, not a token. The bearer token is valid and
 configured; every v2 read endpoint returns `402 credits depleted`, including
 the cheapest single-tweet fetch. Reddit may be the cheaper first source.*
@@ -176,6 +185,26 @@ Until this exists `economicDesign` scores `null` permanently, capping every
 composite.
 
 ### E3. Orynth Launch Engine handoff
+
+---
+
+### Topic-scoped demand ingestion ✅ *shipped 2026-08-19*
+Every other demand source is entity-scoped — commits belong to a repository,
+transactions to a mint, issues to a project. A Build Opportunity has none of
+those, so the intersection gate was **starved rather than miscalibrated**: it
+requires demand across two or more families and no topic could supply even one.
+
+Two topic-keyed sources, neither needing new credentials: GitHub repository
+search (builder) and Stack Overflow question volume (attention). Opportunities
+now reach real verdicts — `react state management` returned `emerging` at 63
+where every topic previously returned `crowded` or `insufficient_evidence`.
+
+**Open calibration question:** net gap can turn positive on a populated market,
+because staleness and fragmentation bonuses outweigh the coverage penalty.
+`react state management` has 8 incumbents yet nets +4, which is why it reads as
+`emerging`. That may be defensible — eight stale, fragmented incumbents is
+arguably room — but it has not been swept, and the topic-demand bands
+(`BUILDER_HIGH`, `ATTENTION_HIGH`) are provisional.
 
 ---
 

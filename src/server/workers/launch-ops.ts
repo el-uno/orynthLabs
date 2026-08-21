@@ -19,6 +19,7 @@ import { SolanaRpcError } from "@/server/clients/helius";
 import { NpmError } from "@/server/clients/npm";
 import { ingestChainActivity } from "@/server/ingestion/run-helius";
 import { ingestMarketStructure } from "@/server/ingestion/run-market-structure";
+import { ingestTopicDemand } from "@/server/ingestion/run-topic-demand";
 import { ingestConsumerActivity } from "@/server/ingestion/run-consumer";
 import { ingestGitHubActivity } from "@/server/ingestion/run-github";
 import { buildLaunchSnapshot } from "@/server/workflows/launch-workflow";
@@ -67,6 +68,7 @@ async function fanOut<T extends { id: string; slug: string }>(
     | "ingest-github"
     | "ingest-chain"
     | "ingest-market"
+    | "ingest-topic-demand"
     | "ingest-consumer"
     | "score-launch",
   load: () => Promise<T[] | null>,
@@ -308,6 +310,37 @@ export function startLaunchOpsWorker() {
         return { ok: true, launchId: launch?.id, signalsIngested: count };
       }
 
+      if (job.name === "ingest-topic-demand") {
+        const { topic } = job.data;
+
+        if (!topic) {
+          const reason = "ingest-topic-demand requires topic";
+          await markJobStatus(jobRecordId, "failed", { error: reason, attempts: attempt });
+          return { ok: false, reason };
+        }
+
+        const launch = await findLaunchByMarketTopic(topic);
+
+        let signals;
+        try {
+          signals = await ingestTopicDemand({ topic });
+        } catch (error) {
+          if (error instanceof GitHubRateLimitError) {
+            await markJobStatus(jobRecordId, "failed", {
+              error: error.message,
+              attempts: attempt
+            });
+            return { ok: false, reason: error.message };
+          }
+          throw error;
+        }
+
+        const count = await insertObservedSignals(launch?.id ?? null, signals);
+
+        await markJobStatus(jobRecordId, "succeeded", { attempts: attempt });
+        return { ok: true, launchId: launch?.id, signalsIngested: count };
+      }
+
       if (job.name === "ingest-market") {
         const { topic } = job.data;
 
@@ -354,6 +387,13 @@ export function startLaunchOpsWorker() {
         const market = await fanOut("ingest-market", listLaunchesWithMarketTopic, (launch) => ({
           topic: launch.topic
         }));
+        // Demand keyed to the topic rather than to a repository, so an
+        // opportunity can supply the families the intersection gate requires.
+        const topicDemand = await fanOut(
+          "ingest-topic-demand",
+          listLaunchesWithMarketTopic,
+          (launch) => ({ topic: launch.topic })
+        );
         // Same repo list as builder ingestion, different evidence: commits are
         // what the team does, issues are what users experience.
         const consumer = await fanOut("ingest-consumer", listLaunchesWithGitHubRepo, (launch) => ({
@@ -362,7 +402,7 @@ export function startLaunchOpsWorker() {
         }));
 
         await markJobStatus(jobRecordId, "succeeded", { attempts: attempt });
-        return { ok: true, fannedOut: github + chain + market + consumer };
+        return { ok: true, fannedOut: github + chain + market + topicDemand + consumer };
       }
 
       if (job.name === "sweep-scoring") {

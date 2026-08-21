@@ -1,3 +1,4 @@
+import { COVERAGE_SIGNAL_TITLE } from "@/server/ingestion/market-structure";
 import { familyForKind } from "@/lib/types";
 import type { OpportunityVerdict, Signal, SignalFamily } from "@/lib/types";
 
@@ -43,8 +44,16 @@ export type OpportunityEvidence = {
   demandFamilies: SignalFamily[];
   /** Summed positive contribution across demand families. */
   demandStrength: number;
-  /** Net market-structure contribution. Positive means solutions are scarce. */
+  /** Net market-structure contribution, used for scoring. */
   gapStrength: number;
+  /**
+   * Contribution from the coverage signal alone, which is what decides whether
+   * a gap exists. Staleness and fragmentation adjust attractiveness but cannot
+   * create scarcity where solutions plainly exist: `react state management`
+   * has eight incumbents yet netted positive on their bonuses and escaped
+   * being called crowded.
+   */
+  coverageStrength: number;
   /** False when no market-structure signal exists: the gap is unexamined. */
   gapExamined: boolean;
   signalCount: number;
@@ -74,10 +83,15 @@ export function summarizeOpportunityEvidence(signals: Signal[]): OpportunityEvid
     0
   );
 
+  const coverageStrength = signals
+    .filter((signal) => signal.label === COVERAGE_SIGNAL_TITLE)
+    .reduce((total, signal) => total + signal.scoreDelta, 0);
+
   return {
     demandFamilies,
     demandStrength,
     gapStrength: netByFamily.get("market_structure") ?? 0,
+    coverageStrength,
     gapExamined: netByFamily.has("market_structure"),
     signalCount: signals.length
   };
@@ -126,13 +140,13 @@ export function assessOpportunity(signals: Signal[]): OpportunityAssessment {
 
   // A well-served market is a finding, not a missing measurement — so it gets
   // a score and an explicit verdict rather than being filed as unknown.
-  if (evidence.gapStrength <= 0) {
+  if (evidence.coverageStrength <= 0) {
     return {
       score: deriveScore(evidence),
       verdict: "crowded",
       evidence,
       reasons: [
-        `existing solutions already serve this space (market-structure net ${evidence.gapStrength})`,
+        `existing solutions already serve this space (coverage ${evidence.coverageStrength})`,
         "demand without a gap is a competitive market, not an opportunity"
       ]
     };
@@ -152,7 +166,7 @@ export function assessOpportunity(signals: Signal[]): OpportunityAssessment {
 
   const score = deriveScore(evidence);
   reasons.push(
-    `gap observed (market-structure net +${evidence.gapStrength}) with demand across ` +
+    `gap observed (coverage +${evidence.coverageStrength}) with demand across ` +
       `${evidence.demandFamilies.length} families: ${evidence.demandFamilies.join(", ")}`
   );
 

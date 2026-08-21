@@ -132,6 +132,7 @@ model must always be able to say no. Enforced by `LaunchRecommendation`.
 | An opportunity requires an observed gap AND demand across 2+ families | High activity in a well-served market is a crowded market, not an opportunity. Not having looked for a gap is not the same as having found one |
 | Scoring reads only the entity's own signals | Reading globally made three companies score identically and let an opportunity borrow another entity's demand |
 | Scoring never falls back to mock fixtures | Fixtures are fine for rendering an empty dashboard; scoring on them fabricates an assessment |
+| Demand evidence is scoped to a topic as well as to an entity | Commits belong to a repository and transactions to a mint, but a Build Opportunity has neither. Without topic-scoped demand the intersection gate was starved, not miscalibrated |
 | Entities carry a `market_topic` | A company's market is not its codebase, and an opportunity has no codebase at all |
 
 ---
@@ -143,9 +144,11 @@ model must always be able to say no. Enforced by `LaunchRecommendation`.
   topics on its own
 - Company Graph ingestion (stage 2)
 - The Economic Design Studio, so `economicDesign` always scores `null`
-- Ingestion for the `attention` family — blocked on X API credits, not on a
-  token. `builder` (GitHub commits/PRs), `capital` (Helius), `market_structure`
-  (npm registry) and `consumer` (GitHub issues) exist today
+- All five families now have ingestion. `attention` comes from Stack Overflow
+  question volume rather than X, which remains blocked on API credits; X and
+  Reddit would deepen it but are no longer required for coverage.
+- `economicDesign` is the last unmeasurable axis and needs the Economic Design
+  Studio, not more ingestion
 
 ---
 
