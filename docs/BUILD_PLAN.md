@@ -28,10 +28,11 @@ overrides the model, two-pass dedup, job tracing, and bearer auth on every
 route that costs money. 139 tests, 8 migrations, verified against live GitHub,
 npm, Solana RPC and Supabase.
 
-**The binding constraint is gone.** All five families ingest, and 5 of 6
-readiness axes are measurable. `economicDesign` is the last, and it needs the
-Economic Design Studio (E2), not more ingestion. The open question is no longer
-coverage but calibration.
+**The binding constraint has moved, not gone.** All five families ingest and 5
+of 6 readiness axes are measurable, so company assessment is unblocked. But
+Discover is not: attention comes only from Stack Overflow, which is a lagging
+indicator, so emerging markets produce no attention evidence and cannot clear
+the intersection gate. A leading-indicator source (A1b) is the constraint now.
 
 ---
 
@@ -60,22 +61,28 @@ topic-scoped demand ingestion. `community` moved from `null` to 53, taking
 measurable axes to **5 of 6** — only `economicDesign` remains, and that needs
 E2 rather than ingestion.
 
-X stays blocked on credits and Reddit needs an app registration; either would
-deepen the family, but neither is required for coverage any more.
+**But Stack Overflow is a lagging indicator, and the second sweep proved it.**
+Question volume was 0 or 1 across every emerging and niche topic, against 63
+for `http client`. People ask about established technology. So attention is
+present for markets that are already served and absent for exactly the gaps the
+product exists to find — which is why 9 of 12 topics now return
+`insufficient_evidence` rather than a verdict.
 
-### A1b. Deeper attention sources — X, Reddit
-*Blocked on X API **credits**, not a token. The bearer token is valid and
-configured; every v2 read endpoint returns `402 credits depleted`, including
-the cheapest single-tweet fetch. Reddit may be the cheaper first source.*
+Coverage is satisfied; usefulness is not. A leading-indicator source is now the
+binding constraint on Discover.
 
-**Highest leverage single change.** Unlocks `community` and `distribution`,
-taking measurable axes from 3 to 5 of 6. Until this exists, no entity can be
-assessed as launch-ready no matter how good it is.
+### A1b. Leading-indicator attention — X or Reddit
+**Now the binding constraint on the Idea Marketplace.** Measured, not assumed:
+Stack Overflow returned 0–1 questions for all eight emerging and niche topics
+in the second sweep, so the attention family never fires for a new market and
+the two-family intersection gate can never be met.
+
+X is blocked on **credits** (a valid token returns `402 credits depleted` on
+every v2 read, including a single tweet by id). Reddit needs an app
+registration but is free — likely the cheaper first source.
 
 Follow the proven shape: pure normalizer + thin IO wrapper + job type + route +
-fan-out entry. Signals must carry `family: "attention"`.
-
-*Watch for:* rate limits far tighter than GitHub's; reuse the fail-fast pattern.
+fan-out entry, `family: "attention"`.
 
 ### A2. Consumer ingestion — user voice ✅ *shipped 2026-08-19*
 GitHub issues, using the existing token. Same API as the builder family,
@@ -123,7 +130,9 @@ Three pre-existing bugs surfaced while verifying it:
 - entities with no signals were scored on **mock fixtures**, fabricating a 70
 
 *Remaining:* nothing proposes candidate topics yet — they are registered by
-hand. Topic discovery is the next step toward a self-feeding Marketplace.
+hand. Topic discovery is worth building only once a leading-indicator attention
+source exists (A1b); until then the Marketplace can reject markets but cannot
+identify gaps.
 
 ### B2. Opportunity scoring and presentation
 Opportunity score, "why now", signals behind it, observed gap, possible
@@ -205,6 +214,46 @@ because staleness and fragmentation bonuses outweigh the coverage penalty.
 `emerging`. That may be defensible — eight stale, fragmented incumbents is
 arguably room — but it has not been swept, and the topic-demand bands
 (`BUILDER_HIGH`, `ATTENTION_HIGH`) are provisional.
+
+---
+
+### Second calibration sweep ✅ *done 2026-08-19*
+Re-swept 12 topics once the full intersection was reachable. The verdict layer
+was badly calibrated, and the sweep found four distinct faults.
+
+Before: the three tiers were statistically indistinguishable — saturated
+markets averaged 58.5, emerging 57.8, niche 60.5 — and 8 of 12 topics returned
+`emerging`, which had become a default rather than a judgement.
+
+Two fixes applied:
+
+- **A zero reading is not weak demand.** The `low` tier awarded +1 regardless
+  of volume, so a topic with 0 repositories and 0 questions still registered as
+  demand: `multi agent treasury coordination` scored 56 `emerging` on no
+  evidence whatsoever. Zero now contributes zero, and a zero-contribution family
+  no longer counts toward the intersection.
+- **Only coverage can establish a gap.** The gate keyed on the *net* of all
+  three market-structure signals, so staleness (+4) and fragmentation (+4)
+  outvoted coverage (-4): `react state management`, with eight incumbents,
+  escaped `crowded`. Staleness and fragmentation now adjust attractiveness but
+  cannot manufacture scarcity where solutions exist.
+
+Result: **saturated markets correctly rejected went from 1/4 to 4/4**, and
+topics claiming demand with no evidence went from 4 to 0.
+
+Deliberately **not** changed:
+- `STRONG_MIN_SCORE` stays at 70. Nothing reaches it, but the cause is Stack
+  Overflow's lag, not the threshold; lowering it would paper over a source
+  problem with a constant.
+- The concentration floor stays at 4. I had proposed raising it because
+  `vector database client` reads `crowded` at six incumbents — but six real
+  incumbents for that space is defensible, and my "emerging" label was a guess,
+  not ground truth. Changing a constant to match my prior rather than the data
+  is exactly the error calibration exists to prevent.
+
+**Known fragility:** `mcp server framework` clears the two-family gate on a
+single Stack Overflow question. A minimum evidence floor per family is likely
+needed, but that wants its own sweep rather than another guess.
 
 ---
 
